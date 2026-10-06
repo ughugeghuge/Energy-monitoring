@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from scipy.interpolate import interp1d
 
 # =====================================================================
 # PAGE CONFIGURATION & UI STYLING
@@ -86,9 +85,9 @@ if module == "🔥 Pinch Analysis (Heat Integration)":
         with st.spinner("Cascading heat flows and compiling composite curves..."):
             df = streams_df.copy()
             
-            # Shift Temperatures
-            df['T_shift_s'] = np.where(df['Type'] == 'Hot', df['Ts'] - dt_min/2, df['Ts'] + dt_min/2)
-            df['T_shift_t'] = np.where(df['Type'] == 'Hot', df['Tt'] - dt_min/2, df['Tt'] + dt_min/2)
+            # Shift Temperatures using correct exact column names
+            df['T_shift_s'] = np.where(df['Type'] == 'Hot', df['Ts (°C)'] - dt_min/2, df['Ts (°C)'] + dt_min/2)
+            df['T_shift_t'] = np.where(df['Type'] == 'Hot', df['Tt (°C)'] - dt_min/2, df['Tt (°C)'] + dt_min/2)
             
             # Extract unique shifted temperatures
             all_shifted_temps = sorted(list(set(df['T_shift_s']).union(set(df['T_shift_t']))), reverse=True)
@@ -104,7 +103,7 @@ if module == "🔥 Pinch Analysis (Heat Integration)":
                     high_t = max(row['T_shift_s'], row['T_shift_t'])
                     low_t = min(row['T_shift_s'], row['T_shift_t'])
                     if high_t >= t_upper and low_t <= t_lower:
-                        cp_sum += row['CP'] if row['Type'] == 'Hot' else -row['CP']
+                        cp_sum += row['CP (kW/°C)'] if row['Type'] == 'Hot' else -row['CP (kW/°C)']
                         
                 q_interval = cp_sum * (t_upper - t_lower)
                 cascade.append(cascade[-1] + q_interval)
@@ -114,7 +113,10 @@ if module == "🔥 Pinch Analysis (Heat Integration)":
             
             gcc_heat = [c + qh_min for c in cascade]
             qc_min = gcc_heat[-1]
-            pinch_temp_shifted = all_shifted_temps[gcc_heat.index(0)]
+            
+            # Find Pinch Point
+            pinch_idx = gcc_heat.index(0)
+            pinch_temp_shifted = all_shifted_temps[pinch_idx]
             pinch_hot = pinch_temp_shifted + dt_min/2
             pinch_cold = pinch_temp_shifted - dt_min/2
 
@@ -136,11 +138,11 @@ if module == "🔥 Pinch Analysis (Heat Integration)":
             # --- Composite Curves (CC) Algorithm ---
             def get_composite(stream_type):
                 sub_df = df[df['Type'] == stream_type]
-                temps = sorted(list(set(sub_df['Ts']).union(set(sub_df['Tt']))))
+                temps = sorted(list(set(sub_df['Ts (°C)']).union(set(sub_df['Tt (°C)']))))
                 H_vals = [0.0]
                 for i in range(len(temps)-1):
                     t1, t2 = temps[i], temps[i+1]
-                    cp_sum = sum(r['CP'] for _, r in sub_df.iterrows() if max(r['Ts'], r['Tt']) >= t2 and min(r['Ts'], r['Tt']) <= t1)
+                    cp_sum = sum(r['CP (kW/°C)'] for _, r in sub_df.iterrows() if max(r['Ts (°C)'], r['Tt (°C)']) >= t2 and min(r['Ts (°C)'], r['Tt (°C)']) <= t1)
                     H_vals.append(H_vals[-1] + cp_sum * (t2 - t1))
                 return temps, H_vals
 
@@ -154,7 +156,6 @@ if module == "🔥 Pinch Analysis (Heat Integration)":
             fig_cc.add_trace(go.Scatter(x=h_hot_aligned, y=t_hot, mode='lines', name='Hot Composite Curve', line=dict(color='#e74c3c', width=3)))
             fig_cc.add_trace(go.Scatter(x=h_cold, y=t_cold, mode='lines', name='Cold Composite Curve', line=dict(color='#3498db', width=3)))
             
-            # Add Delta T Min Indicators
             fig_cc.update_layout(title="Hot & Cold Composite Curves (T-H Diagram)", xaxis_title="Enthalpy (kW)", yaxis_title="Actual Temperature (°C)", height=500, template="plotly_white")
             fig_cc = add_plotly_watermark(fig_cc)
             
@@ -308,7 +309,7 @@ elif module == "💡 Lighting Retrofit Analytics":
 
     fig = go.Figure(go.Waterfall(
         name="Energy", orientation="v", measure=["relative", "relative", "total"],
-        x=["Current Basline", "LED Avoidance", "Optimized State"], textposition="outside",
+        x=["Current Baseline", "LED Avoidance", "Optimized State"], textposition="outside",
         text=[f"{old_kw} kW", f"-{saved_kw} kW", f"{new_kw} kW"], y=[old_kw, -saved_kw, new_kw],
         connector={"line":{"color":"#7f8c8d"}},
         decreasing={"marker":{"color":"#2ecc71"}}, increasing={"marker":{"color":"#e74c3c"}}, totals={"marker":{"color":"#3498db"}}
@@ -351,8 +352,6 @@ elif module == "📈 Plant Combined Analytics (Sankey)":
     useful_comp = comp_kw - comp_loss
     useful_light = light_kw - light_loss
     useful_pump = pump_kw - pump_loss
-    
-    total_loss = chiller_loss + comp_loss + light_loss + pump_loss
 
     fig = go.Figure(data=[go.Sankey(
         node = dict(
