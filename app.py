@@ -81,16 +81,17 @@ st.markdown('<div class="footer-watermark">prepared by- Umesh Ghuge</div>', unsa
 # =====================================================================
 st.sidebar.markdown("<div class='sidebar-section'>AUDIT MODULES</div>", unsafe_allow_html=True)
 module = st.sidebar.radio("Select Engineering System:", [
-    "Pinch Analysis & Heat Integration",
-    "HVAC & Chiller Systems",
-    "Cooling Tower Analytics",
-    "Compressed Air Systems",
-    "Lighting Retrofit Economics",
-    "Plant-Wide Energy Sankey"
+    "1. Pinch Analysis & Heat Integration",
+    "2. Heat Exchanger (HE) Analytics",
+    "3. HVAC & Chiller Systems",
+    "4. Cooling Tower Analytics",
+    "5. Compressed Air Systems",
+    "6. Lighting Retrofit Economics",
+    "7. Plant-Wide Energy Sankey"
 ], label_visibility="collapsed")
 
 # Visual gap before settings
-st.sidebar.markdown("<br><br>", unsafe_allow_html=True)
+st.sidebar.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)
 
 with st.sidebar.expander("⚙️ Global Settings & Economics", expanded=False):
     col_cur, col_unit = st.columns(2)
@@ -106,7 +107,7 @@ with st.sidebar.expander("⚙️ Global Settings & Economics", expanded=False):
     OP_HOURS = st.number_input("Annual Operating Hours", value=8000, step=100)
 
 # =====================================================================
-# CORE ALGORITHMS
+# CORE ALGORITHMS & UTILITIES
 # =====================================================================
 def run_pinch_algorithm(df, dt_min, cp_col):
     df_temp = df.copy()
@@ -145,83 +146,59 @@ def calc_steam_flow(q_val, unit, h_fg_kj):
         h_fg_kcal = h_fg_kj / 4.184
         return q_val / h_fg_kcal
 
-def generate_pinch_pdf(df_inputs, qh_min, qc_min, pinch_hot, pinch_cold, q_rec, dt_opt, dt_min_current,
-                       h_hot_aligned, t_hot, h_cold, t_cold, gcc_heat, all_shifted_temps,
-                       dt_range, total_list, opex_list, capex_list, curr_sym, therm_unit,
-                       steam_req, h_fg_display, h_fg_unit):
-    fig = plt.figure(figsize=(10, 24))
-    gs = fig.add_gridspec(5, 1, height_ratios=[1.2, 2, 2, 2, 2.2])
-    
-    # 0. Table & Metrics
-    ax0 = fig.add_subplot(gs[0])
-    ax0.axis('off')
-    ax0.text(0.5, 0.95, "PINCH ANALYSIS & HEAT INTEGRATION REPORT", fontsize=16, weight='bold', ha='center', color='#1f4e79')
-    table_data = [df_inputs.columns.to_list()] + df_inputs.values.tolist()
-    table = ax0.table(cellText=table_data, loc='center', cellLoc='center', bbox=[0.05, 0.2, 0.9, 0.6])
-    table.auto_set_font_size(False)
-    table.set_fontsize(8)
-    for (row, col), cell in table.get_celld().items():
-        cell.set_edgecolor('#E0E0E0')
-        if row == 0:
-            cell.set_facecolor('#2C3E50')
-            cell.set_text_props(weight='bold', color='white')
-        else:
-            cell.set_facecolor('#F8F9FA' if row % 2 == 0 else '#FFFFFF')
-            
-    metrics_text = f"TARGETS: Min Hot Utility: {qh_min:,.0f} {therm_unit} | Min Cold Utility: {qc_min:,.0f} {therm_unit} | Process Heat Recovered: {q_rec:,.0f} {therm_unit}"
-    ax0.text(0.5, 0.05, metrics_text, fontsize=10, weight='bold', ha='center', color='#e74c3c')
+def format_insights_for_pdf(insights_raw, width=110):
+    formatted = ""
+    for section in insights_raw.split("\n\n"):
+        lines = section.split("\n")
+        formatted += lines[0] + "\n" # Header
+        for line in lines[1:]:
+            formatted += textwrap.fill(line, width=width) + "\n"
+        formatted += "\n"
+    return formatted
 
-    # 1. Composite Curves
-    ax1 = fig.add_subplot(gs[1])
-    ax1.plot(h_hot_aligned, t_hot, color='#e74c3c', lw=2, label='Hot Composite')
-    ax1.plot(h_cold, t_cold, color='#3498db', lw=2, label='Cold Composite')
-    ax1.set_title("Composite Curves (T-H Diagram)", weight='bold')
-    ax1.set_xlabel(f"Enthalpy ({therm_unit})")
-    ax1.set_ylabel("Temperature (°C)")
-    ax1.grid(True, linestyle='--', alpha=0.6)
-    ax1.legend()
-
-    # 2. GCC
-    ax2 = fig.add_subplot(gs[2])
-    ax2.plot(gcc_heat, all_shifted_temps, color='#8e44ad', lw=2, marker='o', markersize=4)
-    ax2.axhline(y=all_shifted_temps[gcc_heat.index(0)], color='gray', linestyle='--', label=f'Pinch Shifted')
-    ax2.set_title("Grand Composite Curve (GCC)", weight='bold')
-    ax2.set_xlabel(f"Net Heat Flow ({therm_unit})")
-    ax2.set_ylabel("Shifted Temperature (°C)")
-    ax2.grid(True, linestyle='--', alpha=0.6)
-    ax2.legend()
-
-    # 3. Cost Optimization
-    ax3 = fig.add_subplot(gs[3])
-    ax3.plot(dt_range, total_list, color='#2c3e50', lw=2, label='Total Cost')
-    ax3.plot(dt_range, opex_list, color='#e74c3c', lw=1.5, linestyle='--', label='Operating Cost')
-    ax3.plot(dt_range, capex_list, color='#3498db', lw=1.5, linestyle='--', label='Capital Cost')
-    ax3.axvline(x=dt_opt, color='green', linestyle=':', label=f'Optimum ΔT_min = {dt_opt:.1f}°C')
-    ax3.set_title("Economic Optimization: Cost vs. ΔT_min", weight='bold')
-    ax3.set_xlabel("ΔT_min (°C)")
-    ax3.set_ylabel(f"Annualized Cost ({curr_sym}/yr)")
-    ax3.grid(True, linestyle='--', alpha=0.6)
-    ax3.legend()
-
-    # 4. Insights with TextWrap for Margin Protection
-    ax4 = fig.add_subplot(gs[4])
-    ax4.axis('off')
-    
-    wrap_w = 110
-    t1 = textwrap.fill(f"The process Pinch Point is located at {pinch_hot:.1f}°C (Hot) and {pinch_cold:.1f}°C (Cold). The absolute minimum heating requirement is {qh_min:,.0f} {therm_unit}, which physically requires a steam demand of {steam_req:,.0f} kg/hr (releasing {h_fg_display:,.0f} {h_fg_unit} of latent heat). The minimum cold utility required to reject excess heat below the pinch is {qc_min:,.0f} {therm_unit}.", width=wrap_w)
-    t2 = textwrap.fill(f"Do not transfer heat from streams above {pinch_hot:.1f}°C to streams below {pinch_cold:.1f}°C. Any cross-pinch heat exchange will directly penalize the system, increasing both steam and cooling water consumption identically.", width=wrap_w)
-    t3 = textwrap.fill(f"The cost optimization engine calculates that the ideal balance between CapEx (heat exchanger area) and OpEx (steam & cooling water) occurs at a ΔT_min of {dt_opt:.1f}°C. Adjusting the network design from the current {dt_min_current}°C to {dt_opt:.1f}°C will minimize total annualized lifecycle costs.", width=wrap_w)
-
-    insights_text = f"EXPERT ANALYTICAL CONCLUSIONS\n\n1. Thermodynamic Bottleneck & Utilities:\n{t1}\n\n2. Pinch Violations:\n{t2}\n\n3. Economic Optimization:\n{t3}"
-
-    ax4.text(0.05, 0.95, insights_text, fontsize=10, va='top', ha='left', family='sans-serif', color='#2c3e50',
-             bbox=dict(boxstyle="round,pad=1.5", facecolor="#f4f6f9", edgecolor="#3498db", alpha=0.8))
-
+def build_pdf_footer(fig):
     ist_tz = pytz.timezone('Asia/Kolkata')
     current_time = datetime.now(ist_tz).strftime('%Y-%m-%d %H:%M:%S IST')
     fig.text(0.05, 0.02, f"Date: {current_time}", ha="left", va="bottom", fontsize=9, color="gray")
     fig.text(0.95, 0.02, "Prepared by Umesh Ghuge", ha="right", va="bottom", fontsize=9, color="gray", style='italic')
 
+def generate_generic_pdf(title, df_inputs, metrics_text, insights_text, plot_func=None, **kwargs):
+    fig = plt.figure(figsize=(10, 16))
+    gs = fig.add_gridspec(3, 1, height_ratios=[1.2, 3, 2])
+    
+    # 0. Table & Metrics
+    ax0 = fig.add_subplot(gs[0])
+    ax0.axis('off')
+    ax0.text(0.5, 0.95, title.upper() + " REPORT", fontsize=16, weight='bold', ha='center', color='#1f4e79')
+    
+    if df_inputs is not None and not df_inputs.empty:
+        table_data = [df_inputs.columns.to_list()] + df_inputs.values.tolist()
+        table = ax0.table(cellText=table_data, loc='center', cellLoc='center', bbox=[0.05, 0.2, 0.9, 0.5])
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        for (row, col), cell in table.get_celld().items():
+            cell.set_edgecolor('#E0E0E0')
+            if row == 0:
+                cell.set_facecolor('#2C3E50')
+                cell.set_text_props(weight='bold', color='white')
+            else:
+                cell.set_facecolor('#F8F9FA' if row % 2 == 0 else '#FFFFFF')
+                
+    ax0.text(0.5, 0.05, metrics_text, fontsize=10, weight='bold', ha='center', color='#e74c3c')
+
+    # 1. Plots
+    if plot_func:
+        ax1 = fig.add_subplot(gs[1])
+        plot_func(ax1, **kwargs)
+
+    # 2. Insights
+    ax2 = fig.add_subplot(gs[2])
+    ax2.axis('off')
+    wrapped_insights = format_insights_for_pdf("EXPERT ANALYTICAL CONCLUSIONS\n\n" + insights_text, width=115)
+    ax2.text(0.05, 0.95, wrapped_insights, fontsize=10, va='top', ha='left', family='sans-serif', color='#2c3e50',
+             bbox=dict(boxstyle="round,pad=1.5", facecolor="#f4f6f9", edgecolor="#3498db", alpha=0.8))
+    
+    build_pdf_footer(fig)
     plt.tight_layout()
     pdf_buffer = io.BytesIO()
     fig.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
@@ -232,7 +209,7 @@ def generate_pinch_pdf(df_inputs, qh_min, qc_min, pinch_hot, pinch_cold, q_rec, 
 # =====================================================================
 # MODULE 1: PINCH ANALYSIS (HEAT INTEGRATION)
 # =====================================================================
-if module == "Pinch Analysis & Heat Integration":
+if module == "1. Pinch Analysis & Heat Integration":
     st.title("Pinch Analysis & Heat Recovery Targeting")
     st.markdown("Optimize heat exchanger networks by determining minimum utility targets and optimum $\Delta T_{min}$ using thermodynamic cascading.")
 
@@ -391,16 +368,184 @@ if module == "Pinch Analysis & Heat Integration":
                 """, unsafe_allow_html=True)
             
             # PDF Export
-            pdf_report = generate_pinch_pdf(streams_df, qh_min, qc_min, pinch_hot, pinch_cold, q_rec, dt_opt, dt_min_current,
-                                            h_hot_aligned, t_hot, h_cold, t_cold, gcc_heat, all_shifted_temps,
-                                            dt_range, total_list, opex_list, capex_list, curr_sym, therm_unit,
-                                            steam_req_base, h_fg_display, h_fg_unit)
-            st.download_button("📥 Download Rigorous Pinch Analysis PDF Report", data=pdf_report, file_name="Pinch_Analysis_Report.pdf", mime="application/pdf")
+            def draw_pinch_plots(fig, gs):
+                # 1. Composite Curves
+                ax1 = fig.add_subplot(gs[0])
+                ax1.plot(h_hot_aligned, t_hot, color='#e74c3c', lw=2, label='Hot Composite')
+                ax1.plot(h_cold, t_cold, color='#3498db', lw=2, label='Cold Composite')
+                ax1.set_title("Composite Curves (T-H Diagram)", weight='bold')
+                ax1.set_xlabel(f"Enthalpy ({therm_unit})")
+                ax1.set_ylabel("Temperature (°C)")
+                ax1.grid(True, linestyle='--', alpha=0.6)
+                ax1.legend()
+
+                # 2. GCC
+                ax2 = fig.add_subplot(gs[1])
+                ax2.plot(gcc_heat, all_shifted_temps, color='#8e44ad', lw=2, marker='o', markersize=4)
+                ax2.axhline(y=all_shifted_temps[gcc_heat.index(0)], color='gray', linestyle='--', label=f'Pinch Shifted')
+                ax2.set_title("Grand Composite Curve (GCC)", weight='bold')
+                ax2.set_xlabel(f"Net Heat Flow ({therm_unit})")
+                ax2.set_ylabel("Shifted Temperature (°C)")
+                ax2.grid(True, linestyle='--', alpha=0.6)
+                ax2.legend()
+
+                # 3. Cost Optimization
+                ax3 = fig.add_subplot(gs[2])
+                ax3.plot(dt_range, total_list, color='#2c3e50', lw=2, label='Total Cost')
+                ax3.plot(dt_range, opex_list, color='#e74c3c', lw=1.5, linestyle='--', label='Operating Cost')
+                ax3.plot(dt_range, capex_list, color='#3498db', lw=1.5, linestyle='--', label='Capital Cost')
+                ax3.axvline(x=dt_opt, color='green', linestyle=':', label=f'Optimum ΔT_min = {dt_opt:.1f}°C')
+                ax3.set_title("Economic Optimization: Cost vs. ΔT_min", weight='bold')
+                ax3.set_xlabel("ΔT_min (°C)")
+                ax3.set_ylabel(f"Annualized Cost ({curr_sym}/yr)")
+                ax3.grid(True, linestyle='--', alpha=0.6)
+                ax3.legend()
+
+            def generate_pinch_custom_pdf():
+                fig = plt.figure(figsize=(10, 24))
+                gs = fig.add_gridspec(5, 1, height_ratios=[1.2, 2, 2, 2, 2.2])
+                
+                # Table
+                ax0 = fig.add_subplot(gs[0])
+                ax0.axis('off')
+                ax0.text(0.5, 0.95, "PINCH ANALYSIS & HEAT INTEGRATION REPORT", fontsize=16, weight='bold', ha='center', color='#1f4e79')
+                table_data = [streams_df.columns.to_list()] + streams_df.values.tolist()
+                table = ax0.table(cellText=table_data, loc='center', cellLoc='center', bbox=[0.05, 0.2, 0.9, 0.6])
+                table.auto_set_font_size(False)
+                table.set_fontsize(8)
+                for (row, col), cell in table.get_celld().items():
+                    cell.set_edgecolor('#E0E0E0')
+                    if row == 0:
+                        cell.set_facecolor('#2C3E50'); cell.set_text_props(weight='bold', color='white')
+                    else:
+                        cell.set_facecolor('#F8F9FA' if row % 2 == 0 else '#FFFFFF')
+                ax0.text(0.5, 0.05, f"TARGETS: Min Hot Utility: {qh_min:,.0f} {therm_unit} | Min Cold Utility: {qc_min:,.0f} {therm_unit} | Heat Recovered: {q_rec:,.0f} {therm_unit}", fontsize=10, weight='bold', ha='center', color='#e74c3c')
+
+                draw_pinch_plots(fig, gs[1:4])
+
+                # Insights
+                ax4 = fig.add_subplot(gs[4])
+                ax4.axis('off')
+                t1 = f"The process Pinch Point is located at {pinch_hot:.1f}°C (Hot) and {pinch_cold:.1f}°C (Cold). The absolute minimum heating requirement is {qh_min:,.0f} {therm_unit}, which physically requires a steam demand of {steam_req_base:,.0f} kg/hr (releasing {h_fg_display:,.0f} {h_fg_unit} of latent heat). The minimum cold utility required to reject excess heat below the pinch is {qc_min:,.0f} {therm_unit}."
+                t2 = f"Do not transfer heat from streams above {pinch_hot:.1f}°C to streams below {pinch_cold:.1f}°C. Any cross-pinch heat exchange will directly penalize the system, increasing both steam and cooling water consumption identically."
+                t3 = f"The cost optimization engine calculates that the ideal balance between CapEx (heat exchanger area) and OpEx (steam & cooling water) occurs at a ΔT_min of {dt_opt:.1f}°C. Adjusting the network design from the current {dt_min_current}°C to {dt_opt:.1f}°C will minimize total annualized lifecycle costs."
+                insights_text = f"1. Thermodynamic Bottleneck & Utilities:\n{t1}\n\n2. Pinch Violations:\n{t2}\n\n3. Economic Optimization:\n{t3}"
+                
+                wrapped = format_insights_for_pdf("EXPERT ANALYTICAL CONCLUSIONS\n\n" + insights_text, 115)
+                ax4.text(0.05, 0.95, wrapped, fontsize=10, va='top', ha='left', family='sans-serif', color='#2c3e50', bbox=dict(boxstyle="round,pad=1.5", facecolor="#f4f6f9", edgecolor="#3498db", alpha=0.8))
+                
+                build_pdf_footer(fig)
+                plt.tight_layout()
+                pdf_buffer = io.BytesIO()
+                fig.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
+                pdf_buffer.seek(0)
+                plt.close(fig)
+                return pdf_buffer
+
+            st.download_button("📥 Download Pinch Analysis Report", data=generate_pinch_custom_pdf(), file_name="Pinch_Analysis_Report.pdf", mime="application/pdf")
 
 # =====================================================================
-# MODULE 2: HVAC & CHILLERS
+# MODULE 2: HEAT EXCHANGER (HE) ANALYTICS
 # =====================================================================
-elif module == "HVAC & Chiller Systems":
+elif module == "2. Heat Exchanger (HE) Analytics":
+    st.title("Heat Exchanger Design & Performance Analytics")
+    st.markdown("Evaluate Log Mean Temperature Difference (LMTD), Heat Exchanger Area, Effectiveness ($\epsilon$), and Number of Transfer Units (NTU).")
+
+    with st.expander("📐 View Mathematical Models & Formulas"):
+        st.latex(r"Q = U \cdot A \cdot LMTD \quad \text{where} \quad LMTD = \frac{\Delta T_1 - \Delta T_2}{\ln(\Delta T_1 / \Delta T_2)}")
+        st.latex(r"Effectiveness (\epsilon) = \frac{Q_{actual}}{Q_{max}} = \frac{C_h(T_{hi} - T_{ho})}{C_{min}(T_{hi} - T_{ci})}")
+        st.latex(r"NTU = \frac{U \cdot A}{C_{min}} \quad | \quad C_R = \frac{C_{min}}{C_{max}}")
+
+    c1, c2, c3, c4 = st.columns(4)
+    thi = c1.number_input("Hot Fluid Inlet (°C)", value=150.0)
+    tho = c2.number_input("Hot Fluid Outlet (°C)", value=80.0)
+    tci = c3.number_input("Cold Fluid Inlet (°C)", value=30.0)
+    tco = c4.number_input("Cold Fluid Outlet (°C)", value=90.0)
+
+    cA, cB, cC = st.columns(3)
+    flow_type = cA.selectbox("Flow Arrangement", ["Counter-Flow", "Parallel-Flow"])
+    q_load = cB.number_input(f"Heat Load Q ({therm_unit})", value=500000.0)
+    u_val = cC.number_input(f"Overall U ({therm_unit}/m²°C)", value=800.0)
+
+    if st.button("Evaluate Heat Exchanger", type="primary"):
+        # Validations
+        if thi <= tho: st.error("Hot Inlet must be greater than Hot Outlet."); st.stop()
+        if tci >= tco: st.error("Cold Outlet must be greater than Cold Inlet."); st.stop()
+        if thi <= tco and flow_type == "Parallel-Flow": st.error("Temperature Cross! Parallel-Flow requires Hot Outlet > Cold Outlet."); st.stop()
+        if tho < tci: st.error("Thermodynamic impossibility: Hot outlet is cooler than Cold inlet."); st.stop()
+
+        # LMTD Calculation
+        dt1 = (thi - tco) if flow_type == "Counter-Flow" else (thi - tci)
+        dt2 = (tho - tci) if flow_type == "Counter-Flow" else (tho - tco)
+
+        if abs(dt1 - dt2) < 0.01:
+            lmtd = dt1
+        else:
+            lmtd = (dt1 - dt2) / np.log(dt1 / dt2)
+
+        area = q_load / (u_val * lmtd)
+
+        # Effectiveness - NTU
+        ch = q_load / (thi - tho)
+        cc = q_load / (tco - tci)
+        cmin = min(ch, cc)
+        cmax = max(ch, cc)
+        cr = cmin / cmax
+        qmax = cmin * (thi - tci)
+        eff = (q_load / qmax) * 100
+        ntu = (u_val * area) / cmin
+
+        mc1, mc2, mc3 = st.columns(3)
+        mc1.markdown(f"<div class='metric-card' style='border-left-color:#3498db;'><div class='metric-title'>Log Mean Temp Difference</div><div class='metric-value'>{lmtd:.1f} °C</div><div class='metric-sub'>ΔT1: {dt1:.1f}°C | ΔT2: {dt2:.1f}°C</div></div>", unsafe_allow_html=True)
+        mc2.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Required Surface Area</div><div class='metric-value'>{area:.1f} m²</div><div class='metric-sub'>Based on U = {u_val} {therm_unit}/m²°C</div></div>", unsafe_allow_html=True)
+        mc3.markdown(f"<div class='metric-card' style='border-left-color:#2ecc71;'><div class='metric-title'>Effectiveness (ε) & NTU</div><div class='metric-value'>{eff:.1f} %</div><div class='metric-sub'>NTU: {ntu:.2f} | C_ratio: {cr:.2f}</div></div>", unsafe_allow_html=True)
+
+        # Plot Temperature Profile
+        x_dist = np.linspace(0, 100, 100)
+        if flow_type == "Counter-Flow":
+            t_hot_curve = thi - (thi - tho) * (x_dist/100)
+            t_cold_curve = tco - (tco - tci) * (x_dist/100) # Cold flows opposite
+        else:
+            t_hot_curve = thi - (thi - tho) * (x_dist/100)
+            t_cold_curve = tci + (tco - tci) * (x_dist/100)
+
+        fig_he = go.Figure()
+        fig_he.add_trace(go.Scatter(x=x_dist, y=t_hot_curve, mode='lines', name='Hot Fluid', line=dict(color='#e74c3c', width=3)))
+        fig_he.add_trace(go.Scatter(x=x_dist, y=t_cold_curve, mode='lines', name='Cold Fluid', line=dict(color='#3498db', width=3)))
+        fig_he.update_layout(title=f"Heat Exchanger Temperature Profile ({flow_type})", xaxis_title="Exchanger Length (%)", yaxis_title="Temperature (°C)", template="plotly_white", height=450)
+        st.plotly_chart(fig_he, use_container_width=True)
+
+        insights_text = f"1. Design Feasibility:\nWith an LMTD of {lmtd:.1f}°C, the required heat transfer area is {area:.1f} m². Counter-flow arrangements generally maximize LMTD, thereby minimizing the physical footprint and capital cost of the exchanger.\n\n2. Thermal Performance (ε-NTU):\nThe calculated effectiveness is {eff:.1f}% with an NTU of {ntu:.2f}. An effectiveness above 80% generally indicates a highly efficient, though potentially oversized, heat exchanger. The capacity ratio (C_min/C_max) is {cr:.2f}.\n\n3. Operational Degradation:\nIf the measured outlet temperatures begin to deviate (e.g., Hot Outlet rises or Cold Outlet drops), this indicates fouling. Fouling reduces the Overall Heat Transfer Coefficient (U), forcing the LMTD to increase to compensate for the lost thermal performance."
+
+        st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
+        c_rpt1, c_rpt2, c_rpt3 = st.columns(3, gap="large")
+        with c_rpt1:
+            st.markdown(f"<div class='insight-card'><h5>1. Design Feasibility</h5><p>With an LMTD of <b>{lmtd:.1f}°C</b>, the required heat transfer area is <b>{area:.1f} m²</b>. Counter-flow arrangements generally maximize LMTD, minimizing physical footprint and capital cost.</p></div>", unsafe_allow_html=True)
+        with c_rpt2:
+            st.markdown(f"<div class='insight-card'><h5>2. Thermal Performance</h5><p>Effectiveness is <b>{eff:.1f}%</b> (NTU: {ntu:.2f}). An effectiveness above 80% indicates a highly efficient unit. The capacity ratio ($C_{{min}}/C_{{max}}$) is {cr:.2f}.</p></div>", unsafe_allow_html=True)
+        with c_rpt3:
+            st.markdown(f"<div class='insight-card'><h5>3. Operational Degradation</h5><p>If measured outlet temperatures deviate over time, it indicates fouling. Fouling reduces the Overall Heat Transfer Coefficient (U), forcing LMTD to increase to compensate.</p></div>", unsafe_allow_html=True)
+
+        # PDF Export
+        df_he = pd.DataFrame({"Parameter": ["Hot Inlet", "Hot Outlet", "Cold Inlet", "Cold Outlet", "Flow", "Heat Load", "U Value"], "Value": [f"{thi}°C", f"{tho}°C", f"{tci}°C", f"{tco}°C", flow_type, f"{q_load} {therm_unit}", f"{u_val} {therm_unit}/m²°C"]})
+        metrics_str = f"LMTD: {lmtd:.1f} °C | Area: {area:.1f} m² | Effectiveness: {eff:.1f} % | NTU: {ntu:.2f}"
+        
+        def plot_he(ax):
+            ax.plot(x_dist, t_hot_curve, color='#e74c3c', lw=2, label='Hot Fluid')
+            ax.plot(x_dist, t_cold_curve, color='#3498db', lw=2, label='Cold Fluid')
+            ax.set_title(f"Temperature Profile ({flow_type})", weight='bold')
+            ax.set_xlabel("Exchanger Length (%)")
+            ax.set_ylabel("Temperature (°C)")
+            ax.grid(True, linestyle='--', alpha=0.6)
+            ax.legend()
+            
+        pdf_report = generate_generic_pdf("Heat Exchanger Analytics", df_he, metrics_str, insights_text, plot_func=plot_he)
+        st.download_button("📥 Download Heat Exchanger Report", data=pdf_report, file_name="HE_Analytics_Report.pdf", mime="application/pdf")
+
+# =====================================================================
+# MODULE 3: HVAC & CHILLERS
+# =====================================================================
+elif module == "3. HVAC & Chiller Systems":
     st.title("Advanced HVAC & Chiller Analytics")
     
     with st.expander("📐 View Mathematical Models & Formulas"):
@@ -426,27 +571,33 @@ elif module == "HVAC & Chiller Systems":
     mc2.markdown(f"<div class='metric-card'><div class='metric-title'>Operating COP</div><div class='metric-value'>{cop:.2f}</div><div class='metric-sub'>Theoretical Max: {carnot_cop:.2f}</div></div>", unsafe_allow_html=True)
     mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Carnot Efficiency</div><div class='metric-value'>{carnot_eff:.1f} %</div><div class='metric-sub'>Deviation from ideal cycle</div></div>", unsafe_allow_html=True)
     
+    insights_text = f"1. Baseline Performance:\nAt {kw_tr:.2f} kW/TR, your chiller operates at {carnot_eff:.1f}% of its theoretical Carnot potential. Typical modern centrifugal chillers achieve 0.55 - 0.65 kW/TR.\n\n2. Actionable Optimization:\nClean condenser tubes immediately. A fouling factor increase of just 0.0005 can increase compressor power by 10%. Elevating chilled water supply setpoints by 1°C can yield a 3% reduction in compressor work."
+    
     st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
     c_rpt1, c_rpt2 = st.columns(2, gap="large")
     with c_rpt1:
-        st.markdown(f"""
-        <div class='insight-card'>
-            <h5>1. Baseline Performance</h5>
-            <p>At <b>{kw_tr:.2f} kW/TR</b>, your chiller operates at <b>{carnot_eff:.1f}%</b> of its theoretical Carnot potential. Typical modern centrifugal chillers achieve 0.55 - 0.65 kW/TR.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div class='insight-card'><h5>1. Baseline Performance</h5><p>At <b>{kw_tr:.2f} kW/TR</b>, your chiller operates at <b>{carnot_eff:.1f}%</b> of its theoretical Carnot potential. Typical modern centrifugal chillers achieve 0.55 - 0.65 kW/TR.</p></div>", unsafe_allow_html=True)
     with c_rpt2:
-        st.markdown("""
-        <div class='insight-card'>
-            <h5>2. Actionable Optimization</h5>
-            <p>Clean condenser tubes immediately. A fouling factor increase of just 0.0005 can increase compressor power by 10%. Elevating chilled water supply setpoints by 1°C can yield a 3% reduction in compressor work.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div class='insight-card'><h5>2. Actionable Optimization</h5><p>Clean condenser tubes immediately. A fouling factor increase of just 0.0005 can increase compressor power by 10%. Elevating chilled water supply setpoints by 1°C can yield a 3% reduction in compressor work.</p></div>", unsafe_allow_html=True)
+
+    df_hvac = pd.DataFrame({"Parameter": ["Flow (m³/h)", "CHW Return", "CHW Supply", "Condenser Temp", "Power (kW)"], "Value": [flow, f"{t_in}°C", f"{t_out}°C", f"{t_cond}°C", power]})
+    metrics_str = f"Load: {tr:.1f} TR | Specific Energy: {kw_tr:.3f} kW/TR | COP: {cop:.2f} | Carnot Eff: {carnot_eff:.1f}%"
+    
+    def plot_hvac(ax):
+        labels = ['Current kW/TR', 'Target kW/TR (0.6)']
+        vals = [kw_tr, 0.6]
+        ax.bar(labels, vals, color=['#e74c3c', '#2ecc71'])
+        ax.set_ylabel("Specific Power (kW/TR)")
+        ax.set_title("Benchmarking Specific Power", weight='bold')
+        ax.grid(axis='y', linestyle='--', alpha=0.6)
+        
+    pdf_report = generate_generic_pdf("HVAC & Chiller Analytics", df_hvac, metrics_str, insights_text, plot_func=plot_hvac)
+    st.download_button("📥 Download HVAC Report", data=pdf_report, file_name="HVAC_Report.pdf", mime="application/pdf")
 
 # =====================================================================
-# MODULE 3: COOLING TOWERS
+# MODULE 4: COOLING TOWERS
 # =====================================================================
-elif module == "Cooling Tower Analytics":
+elif module == "4. Cooling Tower Analytics":
     st.title("Cooling Tower & Heat Rejection Analytics")
     
     with st.expander("📐 View Mathematical Models & Formulas"):
@@ -474,27 +625,32 @@ elif module == "Cooling Tower Analytics":
         mc2.markdown(f"<div class='metric-card'><div class='metric-title'>Evaporative Loss</div><div class='metric-value'>{evap:.1f} m³/h</div><div class='metric-sub'>Pure water lost to atmosphere</div></div>", unsafe_allow_html=True)
         mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Required Make-Up</div><div class='metric-value'>{makeup:.1f} m³/h</div><div class='metric-sub'>Evaporation + Blowdown (3 COC)</div></div>", unsafe_allow_html=True)
 
+        insights_text = f"1. Approach Analysis:\nYour current approach is {app:.1f}°C. Industrial towers are designed for a 3-5°C approach. If your approach is higher, inspect fill media for scaling or verify fan blade pitch angles.\n\n2. Water Conservation:\nYou are consuming {makeup*OP_HOURS:,.0f} m³ of fresh water annually. Increasing your Cycles of Concentration (COC) through automated blowdown controllers can significantly reduce this intake."
+
         st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
         c_rpt1, c_rpt2 = st.columns(2, gap="large")
         with c_rpt1:
-            st.markdown(f"""
-            <div class='insight-card'>
-                <h5>1. Approach Analysis</h5>
-                <p>Your current approach is <b>{app:.1f}°C</b>. Industrial towers are designed for a 3-5°C approach. If your approach is higher, inspect fill media for scaling or verify fan blade pitch angles.</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div class='insight-card'><h5>1. Approach Analysis</h5><p>Your current approach is <b>{app:.1f}°C</b>. Industrial towers are designed for a 3-5°C approach. If your approach is higher, inspect fill media for scaling or verify fan blade pitch angles.</p></div>", unsafe_allow_html=True)
         with c_rpt2:
-            st.markdown(f"""
-            <div class='insight-card'>
-                <h5>2. Water Conservation</h5>
-                <p>You are consuming <b>{makeup*OP_HOURS:,.0f} m³</b> of fresh water annually. Increasing your Cycles of Concentration (COC) through automated blowdown controllers can significantly reduce this intake.</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div class='insight-card'><h5>2. Water Conservation</h5><p>You are consuming <b>{makeup*OP_HOURS:,.0f} m³</b> of fresh water annually. Increasing your Cycles of Concentration (COC) through automated blowdown controllers can significantly reduce this intake.</p></div>", unsafe_allow_html=True)
+
+        df_ct = pd.DataFrame({"Parameter": ["Hot Return", "Cold Supply", "Ambient WBT", "Circulation Flow"], "Value": [f"{t_in}°C", f"{t_out}°C", f"{wbt}°C", f"{flow} m³/h"]})
+        metrics_str = f"Effectiveness: {eff:.1f}% | Approach: {app:.1f}°C | Range: {rng:.1f}°C | Make-up Water: {makeup:.1f} m³/h"
+        
+        def plot_ct(ax):
+            labels = ['Evaporation', 'Blowdown/Drift']
+            sizes = [evap, blowdown]
+            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=['#3498db', '#e74c3c'])
+            ax.axis('equal')
+            ax.set_title("Water Loss Breakdown", weight='bold')
+
+        pdf_report = generate_generic_pdf("Cooling Tower Analytics", df_ct, metrics_str, insights_text, plot_func=plot_ct)
+        st.download_button("📥 Download Cooling Tower Report", data=pdf_report, file_name="CT_Report.pdf", mime="application/pdf")
 
 # =====================================================================
-# MODULE 4: COMPRESSED AIR
+# MODULE 5: COMPRESSED AIR
 # =====================================================================
-elif module == "Compressed Air Systems":
+elif module == "5. Compressed Air Systems":
     st.title("Compressed Air Leakage Analytics")
     
     with st.expander("📐 View Mathematical Models & Formulas"):
@@ -517,27 +673,32 @@ elif module == "Compressed Air Systems":
     mc2.markdown(f"<div class='metric-card'><div class='metric-title'>System Leakage</div><div class='metric-value'>{l_pct:.1f} %</div><div class='metric-sub'>BEE Standard: < 10%</div></div>", unsafe_allow_html=True)
     mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Financial Bleed</div><div class='metric-value'>{curr_sym}{annual_loss_cost:,.0f}</div><div class='metric-sub'>Annual cost of leaks</div></div>", unsafe_allow_html=True)
     
+    insights_text = f"1. Leakage Impact:\nThe network is leaking {l_pct:.1f}% of generated air, bleeding {curr_sym}{annual_loss_cost:,.0f} per year. Implement an ultrasonic leak detection survey immediately. Target reducing leakage to under 10%.\n\n2. Pressure Reduction:\nFor every 1 bar reduction in header pressure, power decreases by ~7%. Ensure point-of-use regulators are utilized rather than over-pressurizing the entire central header."
+
     st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
     c_rpt1, c_rpt2 = st.columns(2, gap="large")
     with c_rpt1:
-        st.markdown(f"""
-        <div class='insight-card'>
-            <h5>1. Leakage Impact</h5>
-            <p>The network is leaking <b>{l_pct:.1f}%</b> of generated air, bleeding <b>{curr_sym}{annual_loss_cost:,.0f}</b> per year. Implement an ultrasonic leak detection survey immediately. Target reducing leakage to under 10%.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div class='insight-card'><h5>1. Leakage Impact</h5><p>The network is leaking <b>{l_pct:.1f}%</b> of generated air, bleeding <b>{curr_sym}{annual_loss_cost:,.0f}</b> per year. Implement an ultrasonic leak detection survey immediately. Target reducing leakage to under 10%.</p></div>", unsafe_allow_html=True)
     with c_rpt2:
-        st.markdown("""
-        <div class='insight-card'>
-            <h5>2. Pressure Reduction</h5>
-            <p>For every 1 bar reduction in header pressure, power decreases by ~7%. Ensure point-of-use regulators are utilized rather than over-pressurizing the entire central header.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div class='insight-card'><h5>2. Pressure Reduction</h5><p>For every 1 bar reduction in header pressure, power decreases by ~7%. Ensure point-of-use regulators are utilized rather than over-pressurizing the entire central header.</p></div>", unsafe_allow_html=True)
+
+    df_air = pd.DataFrame({"Parameter": ["Capacity (CFM)", "Motor (kW)", "Load Time", "Unload Time"], "Value": [cap_cfm, power_kw, f"{t_on} s", f"{t_off} s"]})
+    metrics_str = f"Specific Power: {spec_power:.3f} kW/CFM | Leakage: {l_pct:.1f}% | Wasted Cost: {curr_sym}{annual_loss_cost:,.0f}/yr"
+    
+    def plot_air(ax):
+        labels = ['Useful Air', 'Leaked Air']
+        sizes = [100 - l_pct, l_pct]
+        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=['#2ecc71', '#e74c3c'])
+        ax.axis('equal')
+        ax.set_title("Compressed Air Network Efficiency", weight='bold')
+
+    pdf_report = generate_generic_pdf("Compressed Air Analytics", df_air, metrics_str, insights_text, plot_func=plot_air)
+    st.download_button("📥 Download Compressed Air Report", data=pdf_report, file_name="Air_Report.pdf", mime="application/pdf")
 
 # =====================================================================
-# MODULE 5: LIGHTING RETROFIT
+# MODULE 6: LIGHTING RETROFIT
 # =====================================================================
-elif module == "Lighting Retrofit Economics":
+elif module == "6. Lighting Retrofit Economics":
     st.title("Lighting Replacement Economics")
     
     with st.expander("📐 View Mathematical Models & Formulas"):
@@ -566,27 +727,33 @@ elif module == "Lighting Retrofit Economics":
     mc2.markdown(f"<div class='metric-card'><div class='metric-title'>Total Capital Outlay</div><div class='metric-value'>{curr_sym}{total_capex:,.0f}</div><div class='metric-sub'>Including installation</div></div>", unsafe_allow_html=True)
     mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Payback Period</div><div class='metric-value'>{roi_months:.1f} Mo</div><div class='metric-sub'>Annual savings: {curr_sym}{annual_savings:,.0f}</div></div>", unsafe_allow_html=True)
 
+    insights_text = f"1. Financial Viability:\nWith a simple payback period of {roi_months:.1f} months, this retrofit is highly attractive. Any ROI under 24 months is generally considered an immediate-action operational priority.\n\n2. Maintenance Offsets:\nLEDs possess a lifespan of ~50,000 hours compared to legacy lifespans of 8,000-15,000 hours. This calculation does not yet include avoided replacement labor costs, meaning your actual ROI will be even faster."
+
     st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
     c_rpt1, c_rpt2 = st.columns(2, gap="large")
     with c_rpt1:
-        st.markdown(f"""
-        <div class='insight-card'>
-            <h5>1. Financial Viability</h5>
-            <p>With a simple payback period of <b>{roi_months:.1f} months</b>, this retrofit is highly attractive. Any ROI under 24 months is generally considered an immediate-action operational priority.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div class='insight-card'><h5>1. Financial Viability</h5><p>With a simple payback period of <b>{roi_months:.1f} months</b>, this retrofit is highly attractive. Any ROI under 24 months is generally considered an immediate-action operational priority.</p></div>", unsafe_allow_html=True)
     with c_rpt2:
-        st.markdown("""
-        <div class='insight-card'>
-            <h5>2. Maintenance Offsets</h5>
-            <p>LEDs possess a lifespan of ~50,000 hours compared to legacy lifespans of 8,000-15,000 hours. This calculation does not yet include avoided replacement labor costs, meaning your actual ROI will be even faster.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div class='insight-card'><h5>2. Maintenance Offsets</h5><p>LEDs possess a lifespan of ~50,000 hours compared to legacy lifespans of 8,000-15,000 hours. This calculation does not yet include avoided replacement labor costs, meaning your actual ROI will be even faster.</p></div>", unsafe_allow_html=True)
+
+    df_light = pd.DataFrame({"Parameter": ["Fixtures Count", "Legacy Wattage", "LED Wattage", "Total Capex"], "Value": [qty, f"{old_w} W", f"{new_w} W", f"{curr_sym}{total_capex:,.0f}"]})
+    metrics_str = f"Demand Reduction: {saved_kw:.1f} kW | Annual Savings: {curr_sym}{annual_savings:,.0f} | Payback: {roi_months:.1f} Months"
+    
+    def plot_light(ax):
+        labels = ['Legacy Draw', 'LED Draw']
+        vals = [old_kw, new_kw]
+        ax.bar(labels, vals, color=['#e74c3c', '#2ecc71'])
+        ax.set_ylabel("Power Demand (kW)")
+        ax.set_title("Demand Reduction", weight='bold')
+        ax.grid(axis='y', linestyle='--', alpha=0.6)
+
+    pdf_report = generate_generic_pdf("Lighting Retrofit Economics", df_light, metrics_str, insights_text, plot_func=plot_light)
+    st.download_button("📥 Download Lighting Report", data=pdf_report, file_name="Lighting_Report.pdf", mime="application/pdf")
 
 # =====================================================================
-# MODULE 6: COMBINED ANALYTICS
+# MODULE 7: COMBINED ANALYTICS
 # =====================================================================
-elif module == "Plant-Wide Energy Sankey":
+elif module == "7. Plant-Wide Energy Sankey":
     st.title("Macro Energy Flow & Optimization")
     st.markdown("Visualize whole-plant energy distribution using advanced Sankey diagrams.")
     
@@ -626,19 +793,25 @@ elif module == "Plant-Wide Energy Sankey":
     fig.update_layout(title_text="Plant Electromechanical Energy Flow Mapping", font_size=12, height=450, margin=dict(l=20, r=20, t=40, b=20))
     st.plotly_chart(fig, use_container_width=True)
 
+    insights_text = f"1. Compressor Dominance:\nNote the massive proportion of compressed air energy routed to 'Losses'. Compressed air is an incredibly inefficient utility (~10-15% mechanical efficiency). Evaluate replacing pneumatic tools with direct electric drives where feasible.\n\n2. Base Load Optimization:\nYour plant is drawing {total_kw} kW. Target a 5% baseline reduction via operational housekeeping (turning off idle equipment, repairing leaks, cleaning heat exchange surfaces), which will yield an immediate, zero-capex saving of {curr_sym}{(total_bill*0.05):,.0f} per year."
+
     st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
     c_rpt1, c_rpt2 = st.columns(2, gap="large")
     with c_rpt1:
-        st.markdown("""
-        <div class='insight-card'>
-            <h5>1. Compressor Dominance</h5>
-            <p>Note the massive proportion of compressed air energy routed to "Losses" (Red line). Compressed air is an incredibly inefficient utility (~10-15% mechanical efficiency). Evaluate replacing pneumatic tools with direct electric drives where feasible.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div class='insight-card'><h5>1. Compressor Dominance</h5><p>Note the massive proportion of compressed air energy routed to \"Losses\" (Red line). Compressed air is an incredibly inefficient utility (~10-15% mechanical efficiency). Evaluate replacing pneumatic tools with direct electric drives where feasible.</p></div>", unsafe_allow_html=True)
     with c_rpt2:
-        st.markdown(f"""
-        <div class='insight-card'>
-            <h5>2. Base Load Optimization</h5>
-            <p>Your plant is drawing <b>{total_kw} kW</b>. Target a 5% baseline reduction via operational housekeeping (turning off idle equipment, repairing leaks, cleaning heat exchange surfaces), which will yield an immediate, zero-capex saving of <b>{curr_sym}{(total_bill*0.05):,.0f}</b> per year.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div class='insight-card'><h5>2. Base Load Optimization</h5><p>Your plant is drawing <b>{total_kw} kW</b>. Target a 5% baseline reduction via operational housekeeping (turning off idle equipment, repairing leaks, cleaning heat exchange surfaces), which will yield an immediate, zero-capex saving of <b>{curr_sym}{(total_bill*0.05):,.0f}</b> per year.</p></div>", unsafe_allow_html=True)
+
+    df_plant = pd.DataFrame({"System": ["HVAC/Chillers", "Compressed Air", "Lighting", "Pumps & Fans"], "Load (kW)": [chiller_kw, comp_kw, light_kw, pump_kw]})
+    metrics_str = f"Aggregate Load: {total_kw:,.0f} kW | Annual TWh: {(total_kw * OP_HOURS)/1e6:.2f} GWh | Total Bill: {curr_sym}{total_bill:,.0f}/yr"
+    
+    def plot_plant(ax):
+        labels = ['Useful Energy', 'System Losses']
+        useful = (chiller_kw-chiller_loss) + (comp_kw-comp_loss) + (light_kw-light_loss) + (pump_kw-pump_loss)
+        losses = chiller_loss + comp_loss + light_loss + pump_loss
+        ax.pie([useful, losses], labels=labels, autopct='%1.1f%%', startangle=90, colors=['#1abc9c', '#e74c3c'])
+        ax.axis('equal')
+        ax.set_title("Plant Base Load Efficiency", weight='bold')
+
+    pdf_report = generate_generic_pdf("Plant-Wide Energy Profile", df_plant, metrics_str, insights_text, plot_func=plot_plant)
+    st.download_button("📥 Download Plant Profile Report", data=pdf_report, file_name="Plant_Profile_Report.pdf", mime="application/pdf")
