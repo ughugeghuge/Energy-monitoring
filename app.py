@@ -90,7 +90,6 @@ module = st.sidebar.radio("Select Engineering System:", [
     "7. Plant-Wide Energy Sankey"
 ], label_visibility="collapsed")
 
-# Visual gap before settings
 st.sidebar.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)
 
 with st.sidebar.expander("⚙️ Global Settings & Economics", expanded=False):
@@ -150,7 +149,7 @@ def format_insights_for_pdf(insights_raw, width=110):
     formatted = ""
     for section in insights_raw.split("\n\n"):
         lines = section.split("\n")
-        formatted += lines[0] + "\n" # Header
+        formatted += lines[0] + "\n" 
         for line in lines[1:]:
             formatted += textwrap.fill(line, width=width) + "\n"
         formatted += "\n"
@@ -369,7 +368,6 @@ if module == "1. Pinch Analysis & Heat Integration":
             
             # PDF Export
             def draw_pinch_plots(fig, gs):
-                # 1. Composite Curves
                 ax1 = fig.add_subplot(gs[0])
                 ax1.plot(h_hot_aligned, t_hot, color='#e74c3c', lw=2, label='Hot Composite')
                 ax1.plot(h_cold, t_cold, color='#3498db', lw=2, label='Cold Composite')
@@ -379,7 +377,6 @@ if module == "1. Pinch Analysis & Heat Integration":
                 ax1.grid(True, linestyle='--', alpha=0.6)
                 ax1.legend()
 
-                # 2. GCC
                 ax2 = fig.add_subplot(gs[1])
                 ax2.plot(gcc_heat, all_shifted_temps, color='#8e44ad', lw=2, marker='o', markersize=4)
                 ax2.axhline(y=all_shifted_temps[gcc_heat.index(0)], color='gray', linestyle='--', label=f'Pinch Shifted')
@@ -389,7 +386,6 @@ if module == "1. Pinch Analysis & Heat Integration":
                 ax2.grid(True, linestyle='--', alpha=0.6)
                 ax2.legend()
 
-                # 3. Cost Optimization
                 ax3 = fig.add_subplot(gs[2])
                 ax3.plot(dt_range, total_list, color='#2c3e50', lw=2, label='Total Cost')
                 ax3.plot(dt_range, opex_list, color='#e74c3c', lw=1.5, linestyle='--', label='Operating Cost')
@@ -405,7 +401,6 @@ if module == "1. Pinch Analysis & Heat Integration":
                 fig = plt.figure(figsize=(10, 24))
                 gs = fig.add_gridspec(5, 1, height_ratios=[1.2, 2, 2, 2, 2.2])
                 
-                # Table
                 ax0 = fig.add_subplot(gs[0])
                 ax0.axis('off')
                 ax0.text(0.5, 0.95, "PINCH ANALYSIS & HEAT INTEGRATION REPORT", fontsize=16, weight='bold', ha='center', color='#1f4e79')
@@ -423,7 +418,6 @@ if module == "1. Pinch Analysis & Heat Integration":
 
                 draw_pinch_plots(fig, gs[1:4])
 
-                # Insights
                 ax4 = fig.add_subplot(gs[4])
                 ax4.axis('off')
                 t1 = f"The process Pinch Point is located at {pinch_hot:.1f}°C (Hot) and {pinch_cold:.1f}°C (Cold). The absolute minimum heating requirement is {qh_min:,.0f} {therm_unit}, which physically requires a steam demand of {steam_req_base:,.0f} kg/hr (releasing {h_fg_display:,.0f} {h_fg_unit} of latent heat). The minimum cold utility required to reject excess heat below the pinch is {qc_min:,.0f} {therm_unit}."
@@ -449,30 +443,80 @@ if module == "1. Pinch Analysis & Heat Integration":
 # =====================================================================
 elif module == "2. Heat Exchanger (HE) Analytics":
     st.title("Heat Exchanger Design & Performance Analytics")
-    st.markdown("Evaluate Log Mean Temperature Difference (LMTD), Heat Exchanger Area, Effectiveness ($\epsilon$), and Number of Transfer Units (NTU).")
+    st.markdown("Evaluate Log Mean Temperature Difference (LMTD), Heat Exchanger Area, Effectiveness ($\epsilon$), and Number of Transfer Units (NTU) based on rigorous fluid thermodynamics.")
 
     with st.expander("📐 View Mathematical Models & Formulas"):
+        st.latex(r"Q = \dot{m}_{h} \cdot C_{p,h} \cdot (T_{h,i} - T_{h,o}) = \dot{m}_{c} \cdot C_{p,c} \cdot (T_{c,o} - T_{c,i})")
         st.latex(r"Q = U \cdot A \cdot LMTD \quad \text{where} \quad LMTD = \frac{\Delta T_1 - \Delta T_2}{\ln(\Delta T_1 / \Delta T_2)}")
-        st.latex(r"Effectiveness (\epsilon) = \frac{Q_{actual}}{Q_{max}} = \frac{C_h(T_{hi} - T_{ho})}{C_{min}(T_{hi} - T_{ci})}")
+        st.latex(r"Effectiveness (\epsilon) = \frac{Q_{actual}}{Q_{max}} = \frac{C_h(T_{h,i} - T_{h,o})}{C_{min}(T_{h,i} - T_{c,i})}")
         st.latex(r"NTU = \frac{U \cdot A}{C_{min}} \quad | \quad C_R = \frac{C_{min}}{C_{max}}")
 
+    st.markdown("### 1. Process Temperatures")
     c1, c2, c3, c4 = st.columns(4)
     thi = c1.number_input("Hot Fluid Inlet (°C)", value=150.0)
     tho = c2.number_input("Hot Fluid Outlet (°C)", value=80.0)
     tci = c3.number_input("Cold Fluid Inlet (°C)", value=30.0)
     tco = c4.number_input("Cold Fluid Outlet (°C)", value=90.0)
 
-    cA, cB, cC = st.columns(3)
-    flow_type = cA.selectbox("Flow Arrangement", ["Counter-Flow", "Parallel-Flow"])
-    q_load = cB.number_input(f"Heat Load Q ({therm_unit})", value=500000.0)
-    u_val = cC.number_input(f"Overall U ({therm_unit}/m²°C)", value=800.0)
+    st.markdown("### 2. Fluid Thermodynamics & Flow Dynamics")
+    c5, c6, c7, c8 = st.columns(4)
+    m_hot = c5.number_input("Hot Fluid Mass Flow (kg/hr)", value=10000.0)
+    
+    cp_val = 4.187 if therm_unit == "kW" else 1.0
+    cp_unit = "kJ/kg°C" if therm_unit == "kW" else "kcal/kg°C"
+    
+    cp_hot = c6.number_input(f"Hot Specific Heat ({cp_unit})", value=float(cp_val))
+    cp_cold = c7.number_input(f"Cold Specific Heat ({cp_unit})", value=float(cp_val))
+    flow_type = c8.selectbox("Flow Arrangement", ["Counter-Flow", "Parallel-Flow"])
 
-    if st.button("Evaluate Heat Exchanger", type="primary"):
-        # Validations
-        if thi <= tho: st.error("Hot Inlet must be greater than Hot Outlet."); st.stop()
-        if tci >= tco: st.error("Cold Outlet must be greater than Cold Inlet."); st.stop()
-        if thi <= tco and flow_type == "Parallel-Flow": st.error("Temperature Cross! Parallel-Flow requires Hot Outlet > Cold Outlet."); st.stop()
-        if tho < tci: st.error("Thermodynamic impossibility: Hot outlet is cooler than Cold inlet."); st.stop()
+    st.markdown("### 3. Heat Transfer Characteristics")
+    cA, cB = st.columns(2)
+    fluid_pair = cA.selectbox("Standard Application (Auto U-Value Reference)", [
+        "Water to Water (Liquid)", 
+        "Steam to Water (Condensing)", 
+        "Light Oil to Water", 
+        "Heavy Oil to Water", 
+        "Gas to Water", 
+        "Custom Input"
+    ])
+    
+    u_dict_w_m2k = {
+        "Water to Water (Liquid)": 1200.0,
+        "Steam to Water (Condensing)": 2000.0,
+        "Light Oil to Water": 450.0,
+        "Heavy Oil to Water": 200.0,
+        "Gas to Water": 50.0,
+        "Custom Input": 800.0
+    }
+    
+    default_u_wm2k = u_dict_w_m2k[fluid_pair]
+    # Convert base W/m2K to kW/m2C or kcal/hr.m2C
+    default_u = default_u_wm2k / 1000.0 if therm_unit == "kW" else default_u_wm2k * 0.8598
+        
+    u_val = cB.number_input(f"Overall Heat Transfer Coeff U ({therm_unit}/m²°C)", value=default_u, format="%.3f")
+
+    if st.button("Evaluate Heat Exchanger Physics", type="primary"):
+        # Rigorous Thermodynamic Validations
+        if thi <= tho: 
+            st.error("🚨 Thermodynamic Violation: Hot Inlet temperature must be strictly greater than Hot Outlet temperature.")
+            st.stop()
+        if tci >= tco: 
+            st.error("🚨 Thermodynamic Violation: Cold Outlet temperature must be strictly greater than Cold Inlet temperature.")
+            st.stop()
+        if tho < tci: 
+            st.error("🚨 Thermodynamic Violation: The hot fluid outlet cannot be cooler than the cold fluid inlet without a refrigeration cycle.")
+            st.stop()
+        if flow_type == "Parallel-Flow" and tho <= tco: 
+            st.error("🚨 Temperature Cross Violation: In a Parallel-Flow arrangement, the Hot Fluid Outlet temperature must exit warmer than the Cold Fluid Outlet temperature. This violates the Second Law of Thermodynamics. Please switch to Counter-Flow or adjust your temperatures.")
+            st.stop()
+
+        # Calculate Heat Load (Q) & Required Cold Flow
+        if therm_unit == "kW":
+            q_load = (m_hot / 3600.0) * cp_hot * (thi - tho)
+            m_cold = (q_load * 3600.0) / (cp_cold * (tco - tci))
+        else:
+            q_load = m_hot * cp_hot * (thi - tho)
+            m_cold = q_load / (cp_cold * (tco - tci))
 
         # LMTD Calculation
         dt1 = (thi - tco) if flow_type == "Counter-Flow" else (thi - tci)
@@ -483,28 +527,33 @@ elif module == "2. Heat Exchanger (HE) Analytics":
         else:
             lmtd = (dt1 - dt2) / np.log(dt1 / dt2)
 
-        area = q_load / (u_val * lmtd)
+        area = q_load / (u_val * lmtd) if u_val > 0 and lmtd > 0 else 0
 
-        # Effectiveness - NTU
-        ch = q_load / (thi - tho)
-        cc = q_load / (tco - tci)
+        # Effectiveness & NTU
+        if therm_unit == "kW":
+            ch = (m_hot / 3600.0) * cp_hot
+            cc = (m_cold / 3600.0) * cp_cold
+        else:
+            ch = m_hot * cp_hot
+            cc = m_cold * cp_cold
+            
         cmin = min(ch, cc)
         cmax = max(ch, cc)
-        cr = cmin / cmax
+        cr = cmin / cmax if cmax > 0 else 0
         qmax = cmin * (thi - tci)
-        eff = (q_load / qmax) * 100
-        ntu = (u_val * area) / cmin
+        eff = (q_load / qmax) * 100 if qmax > 0 else 0
+        ntu = (u_val * area) / cmin if cmin > 0 else 0
 
         mc1, mc2, mc3 = st.columns(3)
-        mc1.markdown(f"<div class='metric-card' style='border-left-color:#3498db;'><div class='metric-title'>Log Mean Temp Difference</div><div class='metric-value'>{lmtd:.1f} °C</div><div class='metric-sub'>ΔT1: {dt1:.1f}°C | ΔT2: {dt2:.1f}°C</div></div>", unsafe_allow_html=True)
-        mc2.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Required Surface Area</div><div class='metric-value'>{area:.1f} m²</div><div class='metric-sub'>Based on U = {u_val} {therm_unit}/m²°C</div></div>", unsafe_allow_html=True)
-        mc3.markdown(f"<div class='metric-card' style='border-left-color:#2ecc71;'><div class='metric-title'>Effectiveness (ε) & NTU</div><div class='metric-value'>{eff:.1f} %</div><div class='metric-sub'>NTU: {ntu:.2f} | C_ratio: {cr:.2f}</div></div>", unsafe_allow_html=True)
+        mc1.markdown(f"<div class='metric-card' style='border-left-color:#3498db;'><div class='metric-title'>Calculated Heat Load</div><div class='metric-value'>{q_load:,.1f} {therm_unit}</div><div class='metric-sub'>Cold Fluid Flow Req: {m_cold:,.0f} kg/hr</div></div>", unsafe_allow_html=True)
+        mc2.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Log Mean Temp Difference</div><div class='metric-value'>{lmtd:.1f} °C</div><div class='metric-sub'>ΔT1: {dt1:.1f}°C | ΔT2: {dt2:.1f}°C</div></div>", unsafe_allow_html=True)
+        mc3.markdown(f"<div class='metric-card' style='border-left-color:#2ecc71;'><div class='metric-title'>Required Surface Area</div><div class='metric-value'>{area:.1f} m²</div><div class='metric-sub'>ε: {eff:.1f}% | NTU: {ntu:.2f}</div></div>", unsafe_allow_html=True)
 
         # Plot Temperature Profile
         x_dist = np.linspace(0, 100, 100)
         if flow_type == "Counter-Flow":
             t_hot_curve = thi - (thi - tho) * (x_dist/100)
-            t_cold_curve = tco - (tco - tci) * (x_dist/100) # Cold flows opposite
+            t_cold_curve = tco - (tco - tci) * (x_dist/100) 
         else:
             t_hot_curve = thi - (thi - tho) * (x_dist/100)
             t_cold_curve = tci + (tco - tci) * (x_dist/100)
@@ -515,20 +564,23 @@ elif module == "2. Heat Exchanger (HE) Analytics":
         fig_he.update_layout(title=f"Heat Exchanger Temperature Profile ({flow_type})", xaxis_title="Exchanger Length (%)", yaxis_title="Temperature (°C)", template="plotly_white", height=450)
         st.plotly_chart(fig_he, use_container_width=True)
 
-        insights_text = f"1. Design Feasibility:\nWith an LMTD of {lmtd:.1f}°C, the required heat transfer area is {area:.1f} m². Counter-flow arrangements generally maximize LMTD, thereby minimizing the physical footprint and capital cost of the exchanger.\n\n2. Thermal Performance (ε-NTU):\nThe calculated effectiveness is {eff:.1f}% with an NTU of {ntu:.2f}. An effectiveness above 80% generally indicates a highly efficient, though potentially oversized, heat exchanger. The capacity ratio (C_min/C_max) is {cr:.2f}.\n\n3. Operational Degradation:\nIf the measured outlet temperatures begin to deviate (e.g., Hot Outlet rises or Cold Outlet drops), this indicates fouling. Fouling reduces the Overall Heat Transfer Coefficient (U), forcing the LMTD to increase to compensate for the lost thermal performance."
+        insights_text = f"1. Design Feasibility:\nWith an LMTD of {lmtd:.1f}°C, the calculated required heat transfer area is {area:.1f} m². Counter-flow arrangements generally maximize LMTD, thereby minimizing the physical footprint and capital cost of the exchanger network compared to parallel flows.\n\n2. Thermal Performance (ε-NTU):\nThe calculated effectiveness is {eff:.1f}% with an NTU of {ntu:.2f}. An effectiveness above 80% generally indicates a highly efficient, though potentially oversized, heat exchanger. The capacity ratio (C_min/C_max) is {cr:.2f}.\n\n3. Operational Degradation:\nIf the measured outlet temperatures in your live plant begin to deviate (e.g., Hot Outlet rises or Cold Outlet drops below these targets), this indicates fouling. Fouling reduces the Overall Heat Transfer Coefficient (U), forcing the LMTD to increase to compensate for the lost thermal performance."
 
         st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
         c_rpt1, c_rpt2, c_rpt3 = st.columns(3, gap="large")
         with c_rpt1:
-            st.markdown(f"<div class='insight-card'><h5>1. Design Feasibility</h5><p>With an LMTD of <b>{lmtd:.1f}°C</b>, the required heat transfer area is <b>{area:.1f} m²</b>. Counter-flow arrangements generally maximize LMTD, minimizing physical footprint and capital cost.</p></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='insight-card'><h5>1. Design Feasibility</h5><p>With an LMTD of <b>{lmtd:.1f}°C</b>, the calculated required heat transfer area is <b>{area:.1f} m²</b>. Counter-flow arrangements generally maximize LMTD, minimizing physical footprint and capital cost.</p></div>", unsafe_allow_html=True)
         with c_rpt2:
             st.markdown(f"<div class='insight-card'><h5>2. Thermal Performance</h5><p>Effectiveness is <b>{eff:.1f}%</b> (NTU: {ntu:.2f}). An effectiveness above 80% indicates a highly efficient unit. The capacity ratio ($C_{{min}}/C_{{max}}$) is {cr:.2f}.</p></div>", unsafe_allow_html=True)
         with c_rpt3:
             st.markdown(f"<div class='insight-card'><h5>3. Operational Degradation</h5><p>If measured outlet temperatures deviate over time, it indicates fouling. Fouling reduces the Overall Heat Transfer Coefficient (U), forcing LMTD to increase to compensate.</p></div>", unsafe_allow_html=True)
 
         # PDF Export
-        df_he = pd.DataFrame({"Parameter": ["Hot Inlet", "Hot Outlet", "Cold Inlet", "Cold Outlet", "Flow", "Heat Load", "U Value"], "Value": [f"{thi}°C", f"{tho}°C", f"{tci}°C", f"{tco}°C", flow_type, f"{q_load} {therm_unit}", f"{u_val} {therm_unit}/m²°C"]})
-        metrics_str = f"LMTD: {lmtd:.1f} °C | Area: {area:.1f} m² | Effectiveness: {eff:.1f} % | NTU: {ntu:.2f}"
+        df_he = pd.DataFrame({
+            "Parameter": ["Hot Inlet", "Hot Outlet", "Cold Inlet", "Cold Outlet", "Hot Flow", "Cold Flow Req", "U Value"], 
+            "Value": [f"{thi}°C", f"{tho}°C", f"{tci}°C", f"{tco}°C", f"{m_hot:,.0f} kg/hr", f"{m_cold:,.0f} kg/hr", f"{u_val} {therm_unit}/m²°C"]
+        })
+        metrics_str = f"Q: {q_load:,.1f} {therm_unit} | LMTD: {lmtd:.1f} °C | Area: {area:.1f} m² | Effectiveness: {eff:.1f} %"
         
         def plot_he(ax):
             ax.plot(x_dist, t_hot_curve, color='#e74c3c', lw=2, label='Hot Fluid')
