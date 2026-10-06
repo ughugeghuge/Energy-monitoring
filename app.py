@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import io
 import pytz
 from datetime import datetime
+import textwrap
 
 # =====================================================================
 # PAGE CONFIGURATION & UI STYLING
@@ -16,6 +17,7 @@ st.set_page_config(page_title="Enterprise Energy & Pinch Analytics", layout="wid
 
 st.markdown("""
     <style>
+    /* Metric Cards */
     .metric-card {
         background-color: #ffffff;
         border-radius: 6px;
@@ -28,39 +30,46 @@ st.markdown("""
     .metric-title { color: #555555; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
     .metric-value { color: #111111; font-size: 26px; font-weight: 800; }
     .metric-sub { color: #888888; font-size: 11px; margin-top: 4px; }
+    
+    /* Sidebar */
     .sidebar-section { font-size: 14px; font-weight: 600; color: #2c3e50; margin-top: 15px; margin-bottom: 5px; border-bottom: 1px solid #ccc; padding-bottom: 3px;}
     
+    /* Headers & Insight Cards */
     .report-header {
-        font-size: 22px;
+        font-size: 20px;
         font-weight: 700;
-        color: #1f4e79;
+        color: #2c3e50;
         border-bottom: 2px solid #3498db;
-        padding-bottom: 10px;
+        padding-bottom: 8px;
         margin-top: 30px;
         margin-bottom: 20px;
     }
-    .insight-col {
+    .insight-card {
         background-color: #f8f9fa;
-        padding: 20px;
-        border-radius: 8px;
         border-top: 4px solid #3498db;
+        border-radius: 6px;
+        padding: 20px;
         height: 100%;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
-    .recommendation-box { 
-        background-color: #f4f6f9; 
-        border-left: 4px solid #3498db; 
-        padding: 20px; 
-        border-radius: 5px; 
-        margin-top: 20px;
-        color: #2c3e50;
-        white-space: normal;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
+    .insight-card h5 {
+        color: #1f4e79;
+        font-weight: 700;
+        margin-top: 0;
+        margin-bottom: 15px;
+        font-size: 15px;
     }
-    .recommendation-box h4 { color: #1f4e79 !important; margin-top: 0; font-weight: 700;}
-    .recommendation-box p { font-weight: 700; color: #2c3e50; margin-top: 15px; margin-bottom: 5px;}
-    .recommendation-box li { color: #333333; margin-bottom: 10px; line-height: 1.5;}
-    .recommendation-box b { color: #111111; }
+    .insight-card p {
+        color: #333333;
+        font-size: 13.5px;
+        line-height: 1.6;
+        margin-bottom: 12px;
+    }
+    .insight-card b {
+        color: #111111;
+    }
+
+    /* Watermark */
     .footer-watermark { position: fixed; right: 15px; bottom: 10px; font-size: 12px; color: #aaa; font-style: italic; z-index: 100;}
     </style>
 """, unsafe_allow_html=True)
@@ -139,7 +148,7 @@ def generate_pinch_pdf(df_inputs, qh_min, qc_min, pinch_hot, pinch_cold, q_rec, 
                        dt_range, total_list, opex_list, capex_list, curr_sym, therm_unit,
                        steam_req, h_fg_display, h_fg_unit):
     fig = plt.figure(figsize=(10, 24))
-    gs = fig.add_gridspec(5, 1, height_ratios=[1.2, 2, 2, 2, 1.8])
+    gs = fig.add_gridspec(5, 1, height_ratios=[1.2, 2, 2, 2, 2.2])
     
     # 0. Table & Metrics
     ax0 = fig.add_subplot(gs[0])
@@ -192,29 +201,19 @@ def generate_pinch_pdf(df_inputs, qh_min, qc_min, pinch_hot, pinch_cold, q_rec, 
     ax3.grid(True, linestyle='--', alpha=0.6)
     ax3.legend()
 
-    # 4. Insights
+    # 4. Insights with TextWrap for Margin Protection
     ax4 = fig.add_subplot(gs[4])
     ax4.axis('off')
-    insights = f"""
-EXPERT ANALYTICAL CONCLUSIONS
+    
+    wrap_w = 110
+    t1 = textwrap.fill(f"The process Pinch Point is located at {pinch_hot:.1f}°C (Hot) and {pinch_cold:.1f}°C (Cold). The absolute minimum heating requirement is {qh_min:,.0f} {therm_unit}, which physically requires a steam demand of {steam_req:,.0f} kg/hr (releasing {h_fg_display:,.0f} {h_fg_unit} of latent heat). The minimum cold utility required to reject excess heat below the pinch is {qc_min:,.0f} {therm_unit}.", width=wrap_w)
+    t2 = textwrap.fill(f"Do not transfer heat from streams above {pinch_hot:.1f}°C to streams below {pinch_cold:.1f}°C. Any cross-pinch heat exchange will directly penalize the system, increasing both steam and cooling water consumption identically.", width=wrap_w)
+    t3 = textwrap.fill(f"The cost optimization engine calculates that the ideal balance between CapEx (heat exchanger area) and OpEx (steam & cooling water) occurs at a ΔT_min of {dt_opt:.1f}°C. Adjusting the network design from the current {dt_min_current}°C to {dt_opt:.1f}°C will minimize total annualized lifecycle costs.", width=wrap_w)
 
-1. Thermodynamic Bottleneck & Utilities:
-The process Pinch Point is located at {pinch_hot:.1f}°C (Hot) and {pinch_cold:.1f}°C (Cold). 
-The absolute minimum heating requirement is {qh_min:,.0f} {therm_unit}, which physically requires a steam 
-demand of {steam_req:,.0f} kg/hr (releasing {h_fg_display:,.0f} {h_fg_unit} of latent heat). 
-The minimum cold utility required to reject excess heat below the pinch is {qc_min:,.0f} {therm_unit}.
+    insights_text = f"EXPERT ANALYTICAL CONCLUSIONS\n\n1. Thermodynamic Bottleneck & Utilities:\n{t1}\n\n2. Pinch Violations:\n{t2}\n\n3. Economic Optimization:\n{t3}"
 
-2. Pinch Violations:
-Do not transfer heat from streams above {pinch_hot:.1f}°C to streams below {pinch_cold:.1f}°C. Any cross-pinch 
-heat exchange will directly penalize the system, increasing both steam and cooling water consumption identically.
-
-3. Economic Optimization:
-The cost optimization engine calculates that the ideal balance between CapEx (heat exchanger area) and 
-OpEx (steam & cooling water) occurs at a ΔT_min of {dt_opt:.1f}°C. Adjusting the network design from 
-the current {dt_min_current}°C to {dt_opt:.1f}°C will minimize total annualized lifecycle costs.
-    """
-    ax4.text(0.05, 0.9, insights, fontsize=9.5, va='top', ha='left', family='monospace', 
-             bbox=dict(boxstyle="round,pad=1", facecolor="#f4f6f9", edgecolor="#3498db", alpha=0.8))
+    ax4.text(0.05, 0.95, insights_text, fontsize=10, va='top', ha='left', family='sans-serif', color='#2c3e50',
+             bbox=dict(boxstyle="round,pad=1.5", facecolor="#f4f6f9", edgecolor="#3498db", alpha=0.8))
 
     ist_tz = pytz.timezone('Asia/Kolkata')
     current_time = datetime.now(ist_tz).strftime('%Y-%m-%d %H:%M:%S IST')
@@ -291,7 +290,7 @@ if module == "Pinch Analysis & Heat Integration":
             annual_savings = unintegrated_opex - current_opex
 
             mc1, mc2, mc3 = st.columns(3)
-            mc1.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Target Hot Utility (QH)</div><div class='metric-value'>{qh_min:,.0f} {therm_unit}</div><div class='metric-sub'>Steam Req: {steam_req_base:,.0f} kg/hr (@ {h_fg_display:,.0f} {h_fg_unit})</div></div>", unsafe_allow_html=True)
+            mc1.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Target Hot Utility (Steam)</div><div class='metric-value'>{steam_req_base:,.0f} kg/hr</div><div class='metric-sub'>Heat Load: {qh_min:,.0f} {therm_unit}</div></div>", unsafe_allow_html=True)
             mc2.markdown(f"<div class='metric-card' style='border-left-color:#3498db;'><div class='metric-title'>Target Cold Utility (QC)</div><div class='metric-value'>{qc_min:,.0f} {therm_unit}</div><div class='metric-sub'>Unintegrated Req: {t_hot_avail:,.0f} {therm_unit}</div></div>", unsafe_allow_html=True)
             mc3.markdown(f"<div class='metric-card' style='border-left-color:#2ecc71;'><div class='metric-title'>Process Heat Recovered</div><div class='metric-value'>{q_rec:,.0f} {therm_unit}</div><div class='metric-sub'>Avoided OpEx: {curr_sym}{annual_savings:,.0f}/yr</div></div>", unsafe_allow_html=True)
 
@@ -354,32 +353,40 @@ if module == "Pinch Analysis & Heat Integration":
             fig_cost.update_layout(title="Economic Optimization: Cost vs. ΔT_min", xaxis_title="ΔT_min (°C)", yaxis_title=f"Annualized Cost ({curr_sym}/yr)", template="plotly_white", height=500)
             st.plotly_chart(fig_cost, use_container_width=True)
 
-            # --- DYNAMIC EXPERT INSIGHTS ---
-            st.markdown(f"""
-            <div class='recommendation-box'>
-                <h4 style='margin-top:0;'>📊 Expert Analytical Conclusions</h4>
-                
-                <p>1. Utility Targets & Thermodynamics</p>
-                <ul>
-                    <li>The <b>Composite Curves</b> dynamically map your maximum internal heat recovery. By overlapping the hot and cold streams, we recover <b>{q_rec:,.0f} {therm_unit}</b> internally with zero fuel cost.</li>
-                    <li>The absolute minimum external heating required is <b>{qh_min:,.0f} {therm_unit}</b>. To deliver this, you require exactly <b>{steam_req_base:,.0f} kg/hr</b> of steam (releasing <b>{h_fg_display:,.0f} {h_fg_unit}</b> of latent heat).</li>
-                    <li>The minimum cooling utility required to reject excess low-grade heat is <b>{qc_min:,.0f} {therm_unit}</b>.</li>
-                </ul>
+            # --- DYNAMIC EXPERT INSIGHTS (CSS Grid Layout) ---
+            st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
+            
+            c_rpt1, c_rpt2, c_rpt3 = st.columns(3, gap="large")
+            
+            with c_rpt1:
+                st.markdown(f"""
+                <div class='insight-card'>
+                    <h5>1. Utility Targets & Latent Heat</h5>
+                    <p><b>Steam Dynamics:</b> At {steam_p} bar g, steam provides a latent heat of <b>{h_fg_display:,.0f} {h_fg_unit}</b>.</p>
+                    <p><b>Minimum Utilities:</b> To satisfy the minimum heating target of {qh_min:,.0f} {therm_unit}, you must inject exactly <b>{steam_req_base:,.0f} kg/hr</b> of steam into the network.</p>
+                    <p><b>Heat Recovery:</b> The overlapping horizontal region of the Composite Curves visually maps the maximum internal process-to-process heat exchange that requires zero external steam.</p>
+                </div>
+                """, unsafe_allow_html=True)
 
-                <p>2. The Golden Rules of the Pinch</p>
-                <ul>
-                    <li>The Pinch Point isolates the network at exactly <b>{pinch_hot:.1f}°C (Hot)</b> and <b>{pinch_cold:.1f}°C (Cold)</b>.</li>
-                    <li><b>Rule 1:</b> Avoid cross-pinch heat transfer. Moving heat from above {pinch_hot:.1f}°C to below {pinch_cold:.1f}°C causes a double penalty—increasing both your steam and cooling demand.</li>
-                    <li><b>Rule 2 & 3:</b> Do not use cooling water above the pinch (it acts as a heat sink), and do not use steam below the pinch (it acts as a heat source).</li>
-                </ul>
+            with c_rpt2:
+                st.markdown(f"""
+                <div class='insight-card'>
+                    <h5>2. The Golden Rules of the Pinch</h5>
+                    <p><b>The Bottleneck:</b> The Pinch Point occurs at <b>{pinch_hot:.1f}°C</b> for Hot streams and <b>{pinch_cold:.1f}°C</b> for Cold streams.</p>
+                    <p><b>Rule 1:</b> Do NOT transfer heat across the pinch. Transferring heat from above {pinch_hot:.1f}°C to below {pinch_cold:.1f}°C incurs a double penalty, increasing both your steam and cooling water bills simultaneously.</p>
+                    <p><b>Rule 2 & 3:</b> Never use cooling utilities above the pinch, and never use steam below the pinch.</p>
+                </div>
+                """, unsafe_allow_html=True)
 
-                <p>3. Financial Impact & Optimization</p>
-                <ul>
-                    <li>The <b>Cost vs. ΔT_min Curve</b> models the trade-off: higher ΔT_min reduces CapEx (smaller heat exchangers) but increases OpEx (higher utility demand).</li>
-                    <li>The rigorous optimization engine calculates that your global <b>Total Cost Minimum occurs at ΔT_min = {dt_opt:.1f}°C</b>. Shifting your design basis from {dt_min_current}°C to {dt_opt:.1f}°C ensures mathematical cost efficiency over the plant's lifecycle.</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
+            with c_rpt3:
+                st.markdown(f"""
+                <div class='insight-card'>
+                    <h5>3. Financial Optimization</h5>
+                    <p><b>The Trade-Off:</b> As your design approach (ΔT_min) increases, Capital Costs drop exponentially (smaller heat exchangers). However, Operating Costs rise linearly (more steam required).</p>
+                    <p><b>Optimum Target:</b> The cost optimization engine has identified the absolute Total Cost Minimum at <b>ΔT_min = {dt_opt:.1f}°C</b>.</p>
+                    <p><b>Action:</b> Adjusting your design approach from {dt_min_current}°C to {dt_opt:.1f}°C will minimize your annualized lifecycle costs and yield maximum ROI.</p>
+                </div>
+                """, unsafe_allow_html=True)
             
             # PDF Export
             pdf_report = generate_pinch_pdf(streams_df, qh_min, qc_min, pinch_hot, pinch_cold, q_rec, dt_opt, dt_min_current,
@@ -418,15 +425,21 @@ elif module == "HVAC & Chiller Systems":
     mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Carnot Efficiency</div><div class='metric-value'>{carnot_eff:.1f} %</div><div class='metric-sub'>Deviation from ideal cycle</div></div>", unsafe_allow_html=True)
     
     st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
-    c_rpt1, c_rpt2 = st.columns(2)
+    c_rpt1, c_rpt2 = st.columns(2, gap="large")
     with c_rpt1:
-        st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-        st.markdown(f"##### 1. Baseline Performance\nAt **{kw_tr:.2f} kW/TR**, your chiller operates at **{carnot_eff:.1f}%** of its theoretical Carnot potential. Typical modern centrifugal chillers achieve 0.55 - 0.65 kW/TR.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='insight-card'>
+            <h5>1. Baseline Performance</h5>
+            <p>At <b>{kw_tr:.2f} kW/TR</b>, your chiller operates at <b>{carnot_eff:.1f}%</b> of its theoretical Carnot potential. Typical modern centrifugal chillers achieve 0.55 - 0.65 kW/TR.</p>
+        </div>
+        """, unsafe_allow_html=True)
     with c_rpt2:
-        st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-        st.markdown("##### 2. Actionable Optimization\nClean condenser tubes immediately. A fouling factor increase of just 0.0005 can increase compressor power by 10%. Elevating chilled water supply setpoints by 1°C can yield a 3% reduction in compressor work.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div class='insight-card'>
+            <h5>2. Actionable Optimization</h5>
+            <p>Clean condenser tubes immediately. A fouling factor increase of just 0.0005 can increase compressor power by 10%. Elevating chilled water supply setpoints by 1°C can yield a 3% reduction in compressor work.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # =====================================================================
 # MODULE 3: COOLING TOWERS
@@ -460,15 +473,21 @@ elif module == "Cooling Tower Analytics":
         mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Required Make-Up</div><div class='metric-value'>{makeup:.1f} m³/h</div><div class='metric-sub'>Evaporation + Blowdown (3 COC)</div></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
-        c_rpt1, c_rpt2 = st.columns(2)
+        c_rpt1, c_rpt2 = st.columns(2, gap="large")
         with c_rpt1:
-            st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-            st.markdown(f"##### 1. Approach Analysis\nYour current approach is **{app:.1f}°C**. Industrial towers are designed for a 3-5°C approach. If your approach is higher, inspect fill media for scaling or verify fan blade pitch angles.")
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='insight-card'>
+                <h5>1. Approach Analysis</h5>
+                <p>Your current approach is <b>{app:.1f}°C</b>. Industrial towers are designed for a 3-5°C approach. If your approach is higher, inspect fill media for scaling or verify fan blade pitch angles.</p>
+            </div>
+            """, unsafe_allow_html=True)
         with c_rpt2:
-            st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-            st.markdown(f"##### 2. Water Conservation\nYou are consuming **{makeup*OP_HOURS:,.0f} m³** of fresh water annually. Increasing your Cycles of Concentration (COC) through automated blowdown controllers can significantly reduce this intake.")
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='insight-card'>
+                <h5>2. Water Conservation</h5>
+                <p>You are consuming <b>{makeup*OP_HOURS:,.0f} m³</b> of fresh water annually. Increasing your Cycles of Concentration (COC) through automated blowdown controllers can significantly reduce this intake.</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 # =====================================================================
 # MODULE 4: COMPRESSED AIR
@@ -497,15 +516,21 @@ elif module == "Compressed Air Systems":
     mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Financial Bleed</div><div class='metric-value'>{curr_sym}{annual_loss_cost:,.0f}</div><div class='metric-sub'>Annual cost of leaks</div></div>", unsafe_allow_html=True)
     
     st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
-    c_rpt1, c_rpt2 = st.columns(2)
+    c_rpt1, c_rpt2 = st.columns(2, gap="large")
     with c_rpt1:
-        st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-        st.markdown(f"##### 1. Leakage Impact\nThe network is leaking **{l_pct:.1f}%** of generated air, bleeding **{curr_sym}{annual_loss_cost:,.0f}** per year. Implement an ultrasonic leak detection survey immediately. Target reducing leakage to under 10%.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='insight-card'>
+            <h5>1. Leakage Impact</h5>
+            <p>The network is leaking <b>{l_pct:.1f}%</b> of generated air, bleeding <b>{curr_sym}{annual_loss_cost:,.0f}</b> per year. Implement an ultrasonic leak detection survey immediately. Target reducing leakage to under 10%.</p>
+        </div>
+        """, unsafe_allow_html=True)
     with c_rpt2:
-        st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-        st.markdown("##### 2. Pressure Reduction\nFor every 1 bar reduction in header pressure, power decreases by ~7%. Ensure point-of-use regulators are utilized rather than over-pressurizing the entire central header.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div class='insight-card'>
+            <h5>2. Pressure Reduction</h5>
+            <p>For every 1 bar reduction in header pressure, power decreases by ~7%. Ensure point-of-use regulators are utilized rather than over-pressurizing the entire central header.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # =====================================================================
 # MODULE 5: LIGHTING RETROFIT
@@ -540,15 +565,21 @@ elif module == "Lighting Retrofit Economics":
     mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Payback Period</div><div class='metric-value'>{roi_months:.1f} Mo</div><div class='metric-sub'>Annual savings: {curr_sym}{annual_savings:,.0f}</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
-    c_rpt1, c_rpt2 = st.columns(2)
+    c_rpt1, c_rpt2 = st.columns(2, gap="large")
     with c_rpt1:
-        st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-        st.markdown(f"##### 1. Financial Viability\nWith a simple payback period of **{roi_months:.1f} months**, this retrofit is highly attractive. Any ROI under 24 months is generally considered an immediate-action operational priority.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='insight-card'>
+            <h5>1. Financial Viability</h5>
+            <p>With a simple payback period of <b>{roi_months:.1f} months</b>, this retrofit is highly attractive. Any ROI under 24 months is generally considered an immediate-action operational priority.</p>
+        </div>
+        """, unsafe_allow_html=True)
     with c_rpt2:
-        st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-        st.markdown("##### 2. Maintenance Offsets\nLEDs possess a lifespan of ~50,000 hours compared to legacy lifespans of 8,000-15,000 hours. This calculation does not yet include avoided replacement labor costs, meaning your actual ROI will be even faster.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div class='insight-card'>
+            <h5>2. Maintenance Offsets</h5>
+            <p>LEDs possess a lifespan of ~50,000 hours compared to legacy lifespans of 8,000-15,000 hours. This calculation does not yet include avoided replacement labor costs, meaning your actual ROI will be even faster.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # =====================================================================
 # MODULE 6: COMBINED ANALYTICS
@@ -594,12 +625,18 @@ elif module == "Plant-Wide Energy Sankey":
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
-    c_rpt1, c_rpt2 = st.columns(2)
+    c_rpt1, c_rpt2 = st.columns(2, gap="large")
     with c_rpt1:
-        st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-        st.markdown("##### 1. Compressor Dominance\nNote the massive proportion of compressed air energy routed to \"Losses\" (Red line). Compressed air is an incredibly inefficient utility (~10-15% mechanical efficiency). Evaluate replacing pneumatic tools with direct electric drives where feasible.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div class='insight-card'>
+            <h5>1. Compressor Dominance</h5>
+            <p>Note the massive proportion of compressed air energy routed to "Losses" (Red line). Compressed air is an incredibly inefficient utility (~10-15% mechanical efficiency). Evaluate replacing pneumatic tools with direct electric drives where feasible.</p>
+        </div>
+        """, unsafe_allow_html=True)
     with c_rpt2:
-        st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-        st.markdown(f"##### 2. Base Load Optimization\nYour plant is drawing **{total_kw} kW**. Target a 5% baseline reduction via operational housekeeping (turning off idle equipment, repairing leaks, cleaning heat exchange surfaces), which will yield an immediate, zero-capex saving of **{curr_sym}{(total_bill*0.05):,.0f}** per year.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='insight-card'>
+            <h5>2. Base Load Optimization</h5>
+            <p>Your plant is drawing <b>{total_kw} kW</b>. Target a 5% baseline reduction via operational housekeeping (turning off idle equipment, repairing leaks, cleaning heat exchange surfaces), which will yield an immediate, zero-capex saving of <b>{curr_sym}{(total_bill*0.05):,.0f}</b> per year.</p>
+        </div>
+        """, unsafe_allow_html=True)
