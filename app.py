@@ -11,6 +11,7 @@ st.set_page_config(page_title="Enterprise Energy & Pinch Analytics", layout="wid
 
 st.markdown("""
     <style>
+    /* Metric Cards */
     .metric-card {
         background-color: #ffffff;
         border-radius: 6px;
@@ -20,12 +21,36 @@ st.markdown("""
         border: 1px solid #e0e0e0;
         margin-bottom: 10px;
     }
-    .metric-title { color: #555; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-    .metric-value { color: #111; font-size: 26px; font-weight: 800; }
-    .metric-sub { color: #888; font-size: 11px; margin-top: 4px; }
+    .metric-title { color: #555555; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .metric-value { color: #111111; font-size: 26px; font-weight: 800; }
+    .metric-sub { color: #888888; font-size: 11px; margin-top: 4px; }
+    
+    /* Sidebar */
     .sidebar-section { font-size: 14px; font-weight: 600; color: #2c3e50; margin-top: 15px; margin-bottom: 5px; border-bottom: 1px solid #ccc; padding-bottom: 3px;}
+    
+    /* Recommendations Box - Fixed for Dark Mode Visibility */
+    .recommendation-box { 
+        background-color: #f4f6f9; 
+        border-left: 4px solid #3498db; 
+        padding: 15px; 
+        border-radius: 5px; 
+        margin-top: 20px;
+        color: #2c3e50; /* Forces dark text even in Streamlit Dark Mode */
+    }
+    .recommendation-box h4 {
+        color: #1f4e79 !important; /* Force dark blue header */
+        margin-top: 0;
+    }
+    .recommendation-box li {
+        color: #333333; /* Force dark grey list items */
+        margin-bottom: 8px;
+    }
+    .recommendation-box b {
+        color: #111111;
+    }
+
+    /* Watermark */
     .footer-watermark { position: fixed; right: 15px; bottom: 10px; font-size: 12px; color: #aaa; font-style: italic; z-index: 100;}
-    .recommendation-box { background-color: #f4f6f9; border-left: 4px solid #3498db; padding: 15px; border-radius: 5px; margin-top: 20px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -38,10 +63,11 @@ st.markdown('<div class="footer-watermark">prepared by- Umesh Ghuge</div>', unsa
 st.sidebar.markdown("<div class='sidebar-section'>GLOBAL SETTINGS</div>", unsafe_allow_html=True)
 
 col_cur, col_unit = st.sidebar.columns(2)
-currency_opt = col_cur.selectbox("Currency", ["INR (₹)", "USD ($)", "EUR (€)", "GBP (£)"])
+# Set default index to 0 for INR and kcal/hr
+currency_opt = col_cur.selectbox("Currency", ["INR (₹)", "USD ($)", "EUR (€)", "GBP (£)"], index=0)
 curr_sym = currency_opt.split(" ")[1].strip("()")
 
-therm_unit = col_unit.selectbox("Thermal Unit", ["kW", "kcal/hr"])
+therm_unit = col_unit.selectbox("Thermal Unit", ["kcal/hr", "kW"], index=0)
 
 st.sidebar.markdown("<div class='sidebar-section'>ECONOMIC FACTORS</div>", unsafe_allow_html=True)
 ELEC_RATE = st.sidebar.number_input(f"Electricity Tariff ({curr_sym}/kWh)", value=8.50 if "₹" in curr_sym else 0.12, step=0.5)
@@ -69,12 +95,14 @@ if module == "Pinch Analysis & Heat Integration":
     dt_min = col1.number_input("Min Approach Temp (ΔT_min °C)", value=10.0, step=1.0)
     
     st.markdown("### Process Streams Definition")
+    
+    # Defaults: 8 Hot Streams, 4 Cold Streams
     default_streams = pd.DataFrame({
-        "Stream ID": ["Hot 1", "Hot 2", "Cold 1", "Cold 2"],
-        "Type": ["Hot", "Hot", "Cold", "Cold"],
-        "Ts (°C)": [170.0, 150.0, 20.0, 80.0],
-        "Tt (°C)": [60.0, 30.0, 135.0, 140.0],
-        f"CP ({therm_unit}/°C)": [3.0, 1.5, 2.0, 4.0]
+        "Stream ID": [f"Hot {i+1}" for i in range(8)] + [f"Cold {i+1}" for i in range(4)],
+        "Type": ["Hot"]*8 + ["Cold"]*4,
+        "Ts (°C)": [170.0, 150.0, 200.0, 180.0, 120.0, 160.0, 140.0, 190.0,  20.0, 80.0, 40.0, 50.0],
+        "Tt (°C)": [60.0, 30.0, 100.0, 80.0, 40.0, 50.0, 70.0, 90.0,  135.0, 140.0, 160.0, 120.0],
+        f"CP ({therm_unit}/°C)": [3.0, 1.5, 2.5, 4.0, 1.2, 3.5, 2.0, 1.8,  2.0, 4.0, 3.0, 1.5]
     })
     
     streams_df = st.data_editor(
@@ -157,9 +185,9 @@ if module == "Pinch Analysis & Heat Integration":
 
             st.markdown(f"""
             <div class='recommendation-box'>
-                <h4 style='margin-top:0;'>📊 Expert Conclusions & Recommendations</h4>
+                <h4>📊 Expert Conclusions & Recommendations</h4>
                 <ul>
-                    <li><b>Utility Targets:</b> The absolute minimum energy required to run this process is <b>{qh_min:.1f} {therm_unit}</b> of heating and <b>{qc_min:.1f} {therm_unit}</b> of cooling. Achieving this requires a perfectly integrated Heat Exchanger Network (HEN).</li>
+                    <li><b>Utility Targets:</b> The absolute minimum energy required to run this process is <b>{qh_min:,.1f} {therm_unit}</b> of heating and <b>{qc_min:,.1f} {therm_unit}</b> of cooling. Achieving this requires a perfectly integrated Heat Exchanger Network (HEN).</li>
                     <li><b>Pinch Violation Warning:</b> Do <b>NOT</b> transfer heat across the pinch point ({pinch_hot}°C Hot / {pinch_cold}°C Cold). Any cross-pinch heat transfer will result in a double penalty, increasing both your hot and cold utility demands by the exact amount transferred.</li>
                     <li><b>Utility Selection (GCC):</b> Review the Grand Composite Curve (bottom graph) to select appropriate utility levels. If the curve opens widely at the top, you may be able to substitute expensive high-pressure steam with cheaper low-grade thermal utilities.</li>
                 </ul>
@@ -211,7 +239,7 @@ elif module == "HVAC & Chiller Systems":
 
     st.markdown(f"""
     <div class='recommendation-box'>
-        <h4 style='margin-top:0;'>📊 Expert Conclusions & Recommendations</h4>
+        <h4>📊 Expert Conclusions & Recommendations</h4>
         <ul>
             <li><b>Current Baseline:</b> At {kw_tr:.2f} kW/TR, your chiller is operating at {carnot_eff:.1f}% of its theoretical Carnot potential.</li>
             <li><b>Setpoint Adjustments:</b> Elevating the chilled water setpoint from {t_out}°C to {opt_t_out}°C yields an estimated {eff_gain_pct:.1f}% reduction in compressor work, saving <b>{curr_sym}{annual_savings:,.0f}</b> annually. Verify if air handling units (AHUs) can satisfy space cooling loads at the elevated supply temperature.</li>
@@ -254,7 +282,7 @@ elif module == "Cooling Tower Analytics":
 
         st.markdown(f"""
         <div class='recommendation-box'>
-            <h4 style='margin-top:0;'>📊 Expert Conclusions & Recommendations</h4>
+            <h4>📊 Expert Conclusions & Recommendations</h4>
             <ul>
                 <li><b>Approach Analysis:</b> Your current approach is {app:.1f}°C. Industrial towers are designed for a 3-5°C approach. If your approach is higher than 5°C, inspect the fill media for scaling/fouling or verify fan blade pitch angles.</li>
                 <li><b>Water Conservation:</b> You are consuming {makeup*OP_HOURS:,.0f} m³ of fresh water annually. Increasing your Cycles of Concentration (COC) through automated blowdown controllers and advanced polymers can significantly reduce this intake.</li>
@@ -291,7 +319,7 @@ elif module == "Compressed Air Systems":
     
     st.markdown(f"""
     <div class='recommendation-box'>
-        <h4 style='margin-top:0;'>📊 Expert Conclusions & Recommendations</h4>
+        <h4>📊 Expert Conclusions & Recommendations</h4>
         <ul>
             <li><b>Leakage Impact:</b> The network is leaking {l_pct:.1f}% of generated air, bleeding <b>{curr_sym}{annual_loss_cost:,.0f}</b> per year. Implement an ultrasonic leak detection survey immediately. Target reducing leakage to under 10%.</li>
             <li><b>Pressure Reduction:</b> For every 1 bar (14.5 psi) reduction in header pressure, compressor power consumption decreases by approximately 7%. Ensure point-of-use regulators are utilized rather than over-pressurizing the entire central header.</li>
@@ -333,7 +361,7 @@ elif module == "Lighting Retrofit Economics":
 
     st.markdown(f"""
     <div class='recommendation-box'>
-        <h4 style='margin-top:0;'>📊 Expert Conclusions & Recommendations</h4>
+        <h4>📊 Expert Conclusions & Recommendations</h4>
         <ul>
             <li><b>Financial Viability:</b> With a simple payback period of {roi_months:.1f} months, this retrofit is highly attractive. Any ROI under 24 months is generally considered an immediate-action operational priority.</li>
             <li><b>Maintenance Offsets:</b> LEDs possess a lifespan of ~50,000 hours compared to legacy lifespans of 8,000-15,000 hours. This calculation does not yet include the avoided replacement/labor costs, meaning your actual ROI will be even faster.</li>
@@ -363,7 +391,6 @@ elif module == "Plant-Wide Energy Sankey":
     mc2.markdown(f"<div class='metric-card'><div class='metric-title'>Annual Consumption</div><div class='metric-value'>{(total_kw * OP_HOURS)/1e6:.2f} GWh</div></div>", unsafe_allow_html=True)
     mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Aggregate OpEx Bill</div><div class='metric-value'>{curr_sym}{total_bill:,.0f}</div></div>", unsafe_allow_html=True)
     
-    # Realistic Energy Loss Assumptions based on BEE
     chiller_loss = chiller_kw * 0.15
     comp_loss = comp_kw * 0.85 
     light_loss = light_kw * 0.60
@@ -387,7 +414,7 @@ elif module == "Plant-Wide Energy Sankey":
 
     st.markdown(f"""
     <div class='recommendation-box'>
-        <h4 style='margin-top:0;'>📊 Expert Conclusions & Recommendations</h4>
+        <h4>📊 Expert Conclusions & Recommendations</h4>
         <ul>
             <li><b>Compressor Dominance:</b> Note the massive proportion of compressed air energy routed to "Losses" (Red line). Compressed air is an incredibly inefficient utility (~10-15% mechanical efficiency). Evaluate replacing pneumatic tools with direct electric drives where feasible.</li>
             <li><b>Base Load Optimization:</b> Your plant is drawing {total_kw} kW. Target a 5% baseline reduction via operational housekeeping (turning off idle equipment, repairing leaks, cleaning heat exchange surfaces), which will yield an immediate, zero-capex saving of <b>{curr_sym}{(total_bill*0.05):,.0f}</b> per year.</li>
