@@ -112,7 +112,7 @@ def run_pinch_algorithm(df, dt_min, cp_col):
 # =====================================================================
 if module == "Pinch Analysis & Heat Integration":
     st.title("Pinch Analysis & Heat Recovery Targeting")
-    st.markdown("Optimize heat exchanger networks by determining minimum utility targets and optimum ΔT_min using realistic Process Models[cite: 9].")
+    st.markdown("Optimize heat exchanger networks by determining minimum utility targets and optimum ΔT_min using realistic Process Models.")
 
     col1, col2 = st.columns([1, 4])
     dt_min_current = col1.number_input("Design Approach Temp (ΔT_min °C)", value=20.0, step=1.0)
@@ -183,13 +183,13 @@ if module == "Pinch Analysis & Heat Integration":
             
             h_pinch = h_hot_aligned[np.argmin(np.abs(np.array(t_hot) - pinch_hot))]
             fig_cc.add_annotation(x=h_pinch, y=pinch_hot, text=f"Pinch (ΔT = {dt_min_current}°C)", showarrow=True, arrowhead=2, arrowcolor="#2c3e50")
-            fig_cc.update_layout(title="Temperature vs. Enthalpy (Composite Curves)[cite: 9]", xaxis_title=f"Enthalpy Ḣ ({therm_unit})", yaxis_title="Temperature T (°C)", template="plotly_white", height=450)
+            fig_cc.update_layout(title="Temperature vs. Enthalpy (Composite Curves)", xaxis_title=f"Enthalpy Ḣ ({therm_unit})", yaxis_title="Temperature T (°C)", template="plotly_white", height=450)
             st.plotly_chart(fig_cc, use_container_width=True)
 
             # --- GRAPH 2: Grand Composite Curve (GCC) ---
             fig_gcc = go.Figure()
             fig_gcc.add_trace(go.Scatter(x=gcc_heat, y=all_shifted_temps, mode='lines+markers', name='GCC', line=dict(color='#8e44ad', width=3)))
-            fig_gcc.add_hline(y=pinch_temp_shifted, line_dash="dash", line_color="gray", annotation_text=f"Pinch ({pinch_temp_shifted}°C Shifted)")
+            fig_gcc.add_hline(y=p_shift, line_dash="dash", line_color="gray", annotation_text=f"Pinch ({p_shift}°C Shifted)")
             fig_gcc.update_layout(title="Grand Composite Curve (GCC)", xaxis_title=f"Net Heat Flow ({therm_unit})", yaxis_title="Shifted Temperature (°C)", template="plotly_white", height=450)
             st.plotly_chart(fig_gcc, use_container_width=True)
 
@@ -216,7 +216,7 @@ if module == "Pinch Analysis & Heat Integration":
             fig_cost.add_trace(go.Scatter(x=dt_range, y=capex_list, mode='lines', name='Capital Costs', line=dict(color='#3498db', width=2, dash='dash')))
             
             fig_cost.add_vline(x=dt_opt, line_dash="dot", line_color="green", annotation_text=f"Optimum ΔT_min = {dt_opt:.1f}°C")
-            fig_cost.update_layout(title="Economic Optimization: Cost vs. ΔT_min[cite: 9]", xaxis_title="ΔT_min (°C)", yaxis_title=f"Annualized Cost ({curr_sym}/yr)", template="plotly_white", height=450)
+            fig_cost.update_layout(title="Economic Optimization: Cost vs. ΔT_min", xaxis_title="ΔT_min (°C)", yaxis_title=f"Annualized Cost ({curr_sym}/yr)", template="plotly_white", height=450)
             st.plotly_chart(fig_cost, use_container_width=True)
 
             st.markdown(f"""
@@ -225,8 +225,8 @@ if module == "Pinch Analysis & Heat Integration":
                 
                 <p>1. The Significance of the Composite Curves</p>
                 <ul>
-                    <li>The <b>Temperature-Enthalpy (T-H) Composite Curve</b> visually maps the maximum possible internal heat recovery (Q_recovery)[cite: 9]. The region where the red and blue curves overlap horizontally represents process-to-process heat exchange that requires <b>zero external fuel</b>[cite: 9].</li>
-                    <li>The horizontal gap at the top right of the curve indicates your absolute <b>Minimum Hot Utility Requirement (Q_HU)</b> of {qh_min:,.0f} {therm_unit}[cite: 9]. The gap at the bottom left is your <b>Minimum Cold Utility (Q_CU)</b> of {qc_min:,.0f} {therm_unit}[cite: 9].</li>
+                    <li>The <b>Temperature-Enthalpy (T-H) Composite Curve</b> visually maps the maximum possible internal heat recovery (Q_recovery). The region where the red and blue curves overlap horizontally represents process-to-process heat exchange that requires <b>zero external fuel</b>.</li>
+                    <li>The horizontal gap at the top right of the curve indicates your absolute <b>Minimum Hot Utility Requirement (Q_HU)</b> of {qh_min:,.0f} {therm_unit}. The gap at the bottom left is your <b>Minimum Cold Utility (Q_CU)</b> of {qc_min:,.0f} {therm_unit}.</li>
                 </ul>
 
                 <p>2. The Golden Rules of Pinch Violations</p>
@@ -239,9 +239,9 @@ if module == "Pinch Analysis & Heat Integration":
 
                 <p>3. Financial Impact & Optimization</p>
                 <ul>
-                    <li>The <b>Cost vs. ΔT_min Curve</b> resolves the fundamental trade-off in process design[cite: 9].</li>
-                    <li>As ΔT_min increases, <b>Capital Costs</b> drop exponentially because higher driving forces require smaller heat exchanger areas[cite: 9]. However, <b>Operating Costs</b> rise linearly because less heat is recovered, forcing higher boiler and cooling tower loads[cite: 9].</li>
-                    <li>The rigorous optimization engine has determined your global <b>Total Cost Minimum occurs at a ΔT_min of {dt_opt:.1f}°C</b>[cite: 9]. Adjusting your design approach from {dt_min_current}°C to {dt_opt:.1f}°C will minimize your annualized lifecycle costs.</li>
+                    <li>The <b>Cost vs. ΔT_min Curve</b> resolves the fundamental trade-off in process design.</li>
+                    <li>As ΔT_min increases, <b>Capital Costs</b> drop exponentially because higher driving forces require smaller heat exchanger areas. However, <b>Operating Costs</b> rise linearly because less heat is recovered, forcing higher boiler and cooling tower loads.</li>
+                    <li>The rigorous optimization engine has determined your global <b>Total Cost Minimum occurs at a ΔT_min of {dt_opt:.1f}°C</b>. Adjusting your design approach from {dt_min_current}°C to {dt_opt:.1f}°C will minimize your annualized lifecycle costs.</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
