@@ -32,7 +32,7 @@ st.markdown("""
     .metric-sub { color: #888888; font-size: 11px; margin-top: 4px; }
     
     /* Sidebar */
-    .sidebar-section { font-size: 14px; font-weight: 600; color: #2c3e50; margin-top: 15px; margin-bottom: 5px; border-bottom: 1px solid #ccc; padding-bottom: 3px;}
+    .sidebar-section { font-size: 14px; font-weight: 600; color: #2c3e50; margin-top: 5px; margin-bottom: 5px; border-bottom: 1px solid #ccc; padding-bottom: 3px;}
     
     /* Headers & Insight Cards */
     .report-header {
@@ -79,20 +79,6 @@ st.markdown('<div class="footer-watermark">prepared by- Umesh Ghuge</div>', unsa
 # =====================================================================
 # GLOBAL PARAMETERS & SIDEBAR UI
 # =====================================================================
-st.sidebar.markdown("<div class='sidebar-section'>GLOBAL SETTINGS</div>", unsafe_allow_html=True)
-
-col_cur, col_unit = st.sidebar.columns(2)
-currency_opt = col_cur.selectbox("Currency", ["INR (₹)", "USD ($)", "EUR (€)", "GBP (£)"], index=0)
-curr_sym = currency_opt.split(" ")[1].strip("()")
-
-therm_unit = col_unit.selectbox("Thermal Unit", ["kcal/hr", "kW"], index=0)
-
-st.sidebar.markdown("<div class='sidebar-section'>ECONOMIC FACTORS</div>", unsafe_allow_html=True)
-ELEC_RATE = st.sidebar.number_input(f"Electricity Tariff ({curr_sym}/kWh)", value=8.50 if "₹" in curr_sym else 0.12, step=0.5)
-STEAM_RATE = st.sidebar.number_input(f"Steam Cost ({curr_sym}/kg)", value=2.00 if "₹" in curr_sym else 0.03, step=0.1)
-COOL_RATE = st.sidebar.number_input(f"Cold Utility Cost ({curr_sym}/{therm_unit})", value=0.50 if "₹" in curr_sym else 0.01, step=0.1)
-OP_HOURS = st.sidebar.number_input("Annual Operating Hours", value=8000, step=100)
-
 st.sidebar.markdown("<div class='sidebar-section'>AUDIT MODULES</div>", unsafe_allow_html=True)
 module = st.sidebar.radio("Select Engineering System:", [
     "Pinch Analysis & Heat Integration",
@@ -102,6 +88,22 @@ module = st.sidebar.radio("Select Engineering System:", [
     "Lighting Retrofit Economics",
     "Plant-Wide Energy Sankey"
 ], label_visibility="collapsed")
+
+# Visual gap before settings
+st.sidebar.markdown("<br><br>", unsafe_allow_html=True)
+
+with st.sidebar.expander("⚙️ Global Settings & Economics", expanded=False):
+    col_cur, col_unit = st.columns(2)
+    currency_opt = col_cur.selectbox("Currency", ["INR (₹)", "USD ($)", "EUR (€)", "GBP (£)"], index=0)
+    curr_sym = currency_opt.split(" ")[1].strip("()")
+
+    therm_unit = col_unit.selectbox("Thermal Unit", ["kcal/hr", "kW"], index=0)
+
+    st.markdown("**Economic Factors**")
+    ELEC_RATE = st.number_input(f"Electricity Tariff ({curr_sym}/kWh)", value=8.50 if "₹" in curr_sym else 0.12, step=0.5)
+    STEAM_RATE = st.number_input(f"Steam Cost ({curr_sym}/kg)", value=2.00 if "₹" in curr_sym else 0.03, step=0.1)
+    COOL_RATE = st.number_input(f"Cold Utility Cost ({curr_sym}/{therm_unit})", value=0.50 if "₹" in curr_sym else 0.01, step=0.1)
+    OP_HOURS = st.number_input("Annual Operating Hours", value=8000, step=100)
 
 # =====================================================================
 # CORE ALGORITHMS
@@ -290,7 +292,7 @@ if module == "Pinch Analysis & Heat Integration":
             annual_savings = unintegrated_opex - current_opex
 
             mc1, mc2, mc3 = st.columns(3)
-            mc1.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Target Hot Utility (Steam)</div><div class='metric-value'>{steam_req_base:,.0f} kg/hr</div><div class='metric-sub'>Heat Load: {qh_min:,.0f} {therm_unit}</div></div>", unsafe_allow_html=True)
+            mc1.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Target Hot Utility (QH)</div><div class='metric-value'>{qh_min:,.0f} {therm_unit}</div><div class='metric-sub'>Steam Req: {steam_req_base:,.0f} kg/hr</div></div>", unsafe_allow_html=True)
             mc2.markdown(f"<div class='metric-card' style='border-left-color:#3498db;'><div class='metric-title'>Target Cold Utility (QC)</div><div class='metric-value'>{qc_min:,.0f} {therm_unit}</div><div class='metric-sub'>Unintegrated Req: {t_hot_avail:,.0f} {therm_unit}</div></div>", unsafe_allow_html=True)
             mc3.markdown(f"<div class='metric-card' style='border-left-color:#2ecc71;'><div class='metric-title'>Process Heat Recovered</div><div class='metric-value'>{q_rec:,.0f} {therm_unit}</div><div class='metric-sub'>Avoided OpEx: {curr_sym}{annual_savings:,.0f}/yr</div></div>", unsafe_allow_html=True)
 
