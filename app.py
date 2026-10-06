@@ -368,7 +368,7 @@ if module == "1. Pinch Analysis & Heat Integration":
             
             # PDF Export
             def draw_pinch_plots(fig, gs):
-                ax1 = fig.add_subplot(gs[0])
+                ax1 = fig.add_subplot(gs[1])
                 ax1.plot(h_hot_aligned, t_hot, color='#e74c3c', lw=2, label='Hot Composite')
                 ax1.plot(h_cold, t_cold, color='#3498db', lw=2, label='Cold Composite')
                 ax1.set_title("Composite Curves (T-H Diagram)", weight='bold')
@@ -377,7 +377,7 @@ if module == "1. Pinch Analysis & Heat Integration":
                 ax1.grid(True, linestyle='--', alpha=0.6)
                 ax1.legend()
 
-                ax2 = fig.add_subplot(gs[1])
+                ax2 = fig.add_subplot(gs[2])
                 ax2.plot(gcc_heat, all_shifted_temps, color='#8e44ad', lw=2, marker='o', markersize=4)
                 ax2.axhline(y=all_shifted_temps[gcc_heat.index(0)], color='gray', linestyle='--', label=f'Pinch Shifted')
                 ax2.set_title("Grand Composite Curve (GCC)", weight='bold')
@@ -386,7 +386,7 @@ if module == "1. Pinch Analysis & Heat Integration":
                 ax2.grid(True, linestyle='--', alpha=0.6)
                 ax2.legend()
 
-                ax3 = fig.add_subplot(gs[2])
+                ax3 = fig.add_subplot(gs[3])
                 ax3.plot(dt_range, total_list, color='#2c3e50', lw=2, label='Total Cost')
                 ax3.plot(dt_range, opex_list, color='#e74c3c', lw=1.5, linestyle='--', label='Operating Cost')
                 ax3.plot(dt_range, capex_list, color='#3498db', lw=1.5, linestyle='--', label='Capital Cost')
@@ -416,7 +416,7 @@ if module == "1. Pinch Analysis & Heat Integration":
                         cell.set_facecolor('#F8F9FA' if row % 2 == 0 else '#FFFFFF')
                 ax0.text(0.5, 0.05, f"TARGETS: Min Hot Utility: {qh_min:,.0f} {therm_unit} | Min Cold Utility: {qc_min:,.0f} {therm_unit} | Heat Recovered: {q_rec:,.0f} {therm_unit}", fontsize=10, weight='bold', ha='center', color='#e74c3c')
 
-                draw_pinch_plots(fig, gs[1:4])
+                draw_pinch_plots(fig, gs)
 
                 ax4 = fig.add_subplot(gs[4])
                 ax4.axis('off')
@@ -490,7 +490,6 @@ elif module == "2. Heat Exchanger (HE) Analytics":
     }
     
     default_u_wm2k = u_dict_w_m2k[fluid_pair]
-    # Convert base W/m2K to kW/m2C or kcal/hr.m2C
     default_u = default_u_wm2k / 1000.0 if therm_unit == "kW" else default_u_wm2k * 0.8598
         
     u_val = cB.number_input(f"Overall Heat Transfer Coeff U ({therm_unit}/m²°C)", value=default_u, format="%.3f")
