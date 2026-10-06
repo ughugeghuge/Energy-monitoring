@@ -4,6 +4,10 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from iapws import IAPWS97
+import matplotlib.pyplot as plt
+import io
+import pytz
+from datetime import datetime
 
 # =====================================================================
 # PAGE CONFIGURATION & UI STYLING
@@ -42,6 +46,21 @@ st.markdown("""
         border-top: 4px solid #3498db;
         height: 100%;
     }
+    .recommendation-box { 
+        background-color: #f4f6f9; 
+        border-left: 4px solid #3498db; 
+        padding: 20px; 
+        border-radius: 5px; 
+        margin-top: 20px;
+        color: #2c3e50;
+        white-space: normal;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+    .recommendation-box h4 { color: #1f4e79 !important; margin-top: 0; font-weight: 700;}
+    .recommendation-box p { font-weight: 700; color: #2c3e50; margin-top: 15px; margin-bottom: 5px;}
+    .recommendation-box li { color: #333333; margin-bottom: 10px; line-height: 1.5;}
+    .recommendation-box b { color: #111111; }
     .footer-watermark { position: fixed; right: 15px; bottom: 10px; font-size: 12px; color: #aaa; font-style: italic; z-index: 100;}
     </style>
 """, unsafe_allow_html=True)
@@ -109,12 +128,105 @@ def run_pinch_algorithm(df, dt_min, cp_col):
     return qh_min, qc_min, pinch_temp_shifted, q_recovered, total_hot_avail, total_cold_req, gcc_heat, all_shifted_temps
 
 def calc_steam_flow(q_val, unit, h_fg_kj):
-    """Calculates steam mass flow in kg/hr based on thermal unit and latent heat in kJ/kg."""
     if unit == "kW":
         return (q_val * 3600.0) / h_fg_kj
-    else: # kcal/hr
+    else: 
         h_fg_kcal = h_fg_kj / 4.184
         return q_val / h_fg_kcal
+
+def generate_pinch_pdf(df_inputs, qh_min, qc_min, pinch_hot, pinch_cold, q_rec, dt_opt, dt_min_current,
+                       h_hot_aligned, t_hot, h_cold, t_cold, gcc_heat, all_shifted_temps,
+                       dt_range, total_list, opex_list, capex_list, curr_sym, therm_unit,
+                       steam_req, h_fg_display, h_fg_unit):
+    fig = plt.figure(figsize=(10, 24))
+    gs = fig.add_gridspec(5, 1, height_ratios=[1.2, 2, 2, 2, 1.8])
+    
+    # 0. Table & Metrics
+    ax0 = fig.add_subplot(gs[0])
+    ax0.axis('off')
+    ax0.text(0.5, 0.95, "PINCH ANALYSIS & HEAT INTEGRATION REPORT", fontsize=16, weight='bold', ha='center', color='#1f4e79')
+    table_data = [df_inputs.columns.to_list()] + df_inputs.values.tolist()
+    table = ax0.table(cellText=table_data, loc='center', cellLoc='center', bbox=[0.05, 0.2, 0.9, 0.6])
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    for (row, col), cell in table.get_celld().items():
+        cell.set_edgecolor('#E0E0E0')
+        if row == 0:
+            cell.set_facecolor('#2C3E50')
+            cell.set_text_props(weight='bold', color='white')
+        else:
+            cell.set_facecolor('#F8F9FA' if row % 2 == 0 else '#FFFFFF')
+            
+    metrics_text = f"TARGETS: Min Hot Utility: {qh_min:,.0f} {therm_unit} | Min Cold Utility: {qc_min:,.0f} {therm_unit} | Process Heat Recovered: {q_rec:,.0f} {therm_unit}"
+    ax0.text(0.5, 0.05, metrics_text, fontsize=10, weight='bold', ha='center', color='#e74c3c')
+
+    # 1. Composite Curves
+    ax1 = fig.add_subplot(gs[1])
+    ax1.plot(h_hot_aligned, t_hot, color='#e74c3c', lw=2, label='Hot Composite')
+    ax1.plot(h_cold, t_cold, color='#3498db', lw=2, label='Cold Composite')
+    ax1.set_title("Composite Curves (T-H Diagram)", weight='bold')
+    ax1.set_xlabel(f"Enthalpy ({therm_unit})")
+    ax1.set_ylabel("Temperature (°C)")
+    ax1.grid(True, linestyle='--', alpha=0.6)
+    ax1.legend()
+
+    # 2. GCC
+    ax2 = fig.add_subplot(gs[2])
+    ax2.plot(gcc_heat, all_shifted_temps, color='#8e44ad', lw=2, marker='o', markersize=4)
+    ax2.axhline(y=all_shifted_temps[gcc_heat.index(0)], color='gray', linestyle='--', label=f'Pinch Shifted')
+    ax2.set_title("Grand Composite Curve (GCC)", weight='bold')
+    ax2.set_xlabel(f"Net Heat Flow ({therm_unit})")
+    ax2.set_ylabel("Shifted Temperature (°C)")
+    ax2.grid(True, linestyle='--', alpha=0.6)
+    ax2.legend()
+
+    # 3. Cost Optimization
+    ax3 = fig.add_subplot(gs[3])
+    ax3.plot(dt_range, total_list, color='#2c3e50', lw=2, label='Total Cost')
+    ax3.plot(dt_range, opex_list, color='#e74c3c', lw=1.5, linestyle='--', label='Operating Cost')
+    ax3.plot(dt_range, capex_list, color='#3498db', lw=1.5, linestyle='--', label='Capital Cost')
+    ax3.axvline(x=dt_opt, color='green', linestyle=':', label=f'Optimum ΔT_min = {dt_opt:.1f}°C')
+    ax3.set_title("Economic Optimization: Cost vs. ΔT_min", weight='bold')
+    ax3.set_xlabel("ΔT_min (°C)")
+    ax3.set_ylabel(f"Annualized Cost ({curr_sym}/yr)")
+    ax3.grid(True, linestyle='--', alpha=0.6)
+    ax3.legend()
+
+    # 4. Insights
+    ax4 = fig.add_subplot(gs[4])
+    ax4.axis('off')
+    insights = f"""
+EXPERT ANALYTICAL CONCLUSIONS
+
+1. Thermodynamic Bottleneck & Utilities:
+The process Pinch Point is located at {pinch_hot:.1f}°C (Hot) and {pinch_cold:.1f}°C (Cold). 
+The absolute minimum heating requirement is {qh_min:,.0f} {therm_unit}, which physically requires a steam 
+demand of {steam_req:,.0f} kg/hr (releasing {h_fg_display:,.0f} {h_fg_unit} of latent heat). 
+The minimum cold utility required to reject excess heat below the pinch is {qc_min:,.0f} {therm_unit}.
+
+2. Pinch Violations:
+Do not transfer heat from streams above {pinch_hot:.1f}°C to streams below {pinch_cold:.1f}°C. Any cross-pinch 
+heat exchange will directly penalize the system, increasing both steam and cooling water consumption identically.
+
+3. Economic Optimization:
+The cost optimization engine calculates that the ideal balance between CapEx (heat exchanger area) and 
+OpEx (steam & cooling water) occurs at a ΔT_min of {dt_opt:.1f}°C. Adjusting the network design from 
+the current {dt_min_current}°C to {dt_opt:.1f}°C will minimize total annualized lifecycle costs.
+    """
+    ax4.text(0.05, 0.9, insights, fontsize=9.5, va='top', ha='left', family='monospace', 
+             bbox=dict(boxstyle="round,pad=1", facecolor="#f4f6f9", edgecolor="#3498db", alpha=0.8))
+
+    ist_tz = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(ist_tz).strftime('%Y-%m-%d %H:%M:%S IST')
+    fig.text(0.05, 0.02, f"Date: {current_time}", ha="left", va="bottom", fontsize=9, color="gray")
+    fig.text(0.95, 0.02, "Prepared by Umesh Ghuge", ha="right", va="bottom", fontsize=9, color="gray", style='italic')
+
+    plt.tight_layout()
+    pdf_buffer = io.BytesIO()
+    fig.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
+    pdf_buffer.seek(0)
+    plt.close(fig)
+    return pdf_buffer
 
 # =====================================================================
 # MODULE 1: PINCH ANALYSIS (HEAT INTEGRATION)
@@ -156,23 +268,21 @@ if module == "Pinch Analysis & Heat Integration":
         with st.spinner("Processing thermodynamic cascade and latent heat models..."):
             cp_col = f"CP ({therm_unit}/°C)"
             
-            # 1. Calculate Steam Thermodynamics
             p_mpa = (steam_p * 0.1) + 0.101325
             try:
                 sat_vap = IAPWS97(P=p_mpa, x=1)
                 sat_liq = IAPWS97(P=p_mpa, x=0)
-                h_fg_kj = sat_vap.h - sat_liq.h # Latent heat in kJ/kg
-                steam_temp = sat_vap.T - 273.15
+                h_fg_kj = sat_vap.h - sat_liq.h 
             except:
                 h_fg_kj = 2000.0
-                steam_temp = 180.0
+                
+            h_fg_display = h_fg_kj if therm_unit == "kW" else h_fg_kj / 4.184
+            h_fg_unit = "kJ/kg" if therm_unit == "kW" else "kcal/kg"
             
-            # 2. Run Pinch Algorithm
             qh_min, qc_min, p_shift, q_rec, t_hot_avail, t_cold_req, gcc_heat, all_shifted_temps = run_pinch_algorithm(streams_df, dt_min_current, cp_col)
             pinch_hot = p_shift + dt_min_current/2
             pinch_cold = p_shift - dt_min_current/2
 
-            # 3. Financial Engine
             steam_req_base = calc_steam_flow(qh_min, therm_unit, h_fg_kj)
             steam_req_unint = calc_steam_flow(t_cold_req, therm_unit, h_fg_kj)
             
@@ -181,7 +291,7 @@ if module == "Pinch Analysis & Heat Integration":
             annual_savings = unintegrated_opex - current_opex
 
             mc1, mc2, mc3 = st.columns(3)
-            mc1.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Target Hot Utility (Steam)</div><div class='metric-value'>{steam_req_base:,.0f} kg/hr</div><div class='metric-sub'>Heat Load: {qh_min:,.0f} {therm_unit}</div></div>", unsafe_allow_html=True)
+            mc1.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Target Hot Utility (QH)</div><div class='metric-value'>{qh_min:,.0f} {therm_unit}</div><div class='metric-sub'>Steam Req: {steam_req_base:,.0f} kg/hr (@ {h_fg_display:,.0f} {h_fg_unit})</div></div>", unsafe_allow_html=True)
             mc2.markdown(f"<div class='metric-card' style='border-left-color:#3498db;'><div class='metric-title'>Target Cold Utility (QC)</div><div class='metric-value'>{qc_min:,.0f} {therm_unit}</div><div class='metric-sub'>Unintegrated Req: {t_hot_avail:,.0f} {therm_unit}</div></div>", unsafe_allow_html=True)
             mc3.markdown(f"<div class='metric-card' style='border-left-color:#2ecc71;'><div class='metric-title'>Process Heat Recovered</div><div class='metric-value'>{q_rec:,.0f} {therm_unit}</div><div class='metric-sub'>Avoided OpEx: {curr_sym}{annual_savings:,.0f}/yr</div></div>", unsafe_allow_html=True)
 
@@ -244,40 +354,39 @@ if module == "Pinch Analysis & Heat Integration":
             fig_cost.update_layout(title="Economic Optimization: Cost vs. ΔT_min", xaxis_title="ΔT_min (°C)", yaxis_title=f"Annualized Cost ({curr_sym}/yr)", template="plotly_white", height=500)
             st.plotly_chart(fig_cost, use_container_width=True)
 
-            # --- EXPERT CONCLUSIONS (Native Streamlit Columns to prevent HTML escaping) ---
-            st.markdown("<div class='report-header'>📊 Expert Analytical Conclusions</div>", unsafe_allow_html=True)
-            
-            c_rpt1, c_rpt2, c_rpt3 = st.columns(3)
-            
-            with c_rpt1:
-                st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-                st.markdown("##### 1. Utility Targets & Latent Heat")
-                st.markdown(f"""
-                * **Steam Dynamics:** At {steam_p} bar g, steam provides a latent heat of **{h_fg_kj:,.0f} kJ/kg**. 
-                * **Minimum Utilities:** To satisfy the minimum heating target of {qh_min:,.0f} {therm_unit}, you must inject exactly **{steam_req_base:,.0f} kg/hr** of steam into the network. 
-                * **Heat Recovery:** The overlapping horizontal region of the Composite Curves visually maps the maximum internal process-to-process heat exchange that requires zero external steam.
-                """)
-                st.markdown("</div>", unsafe_allow_html=True)
+            # --- DYNAMIC EXPERT INSIGHTS ---
+            st.markdown(f"""
+            <div class='recommendation-box'>
+                <h4 style='margin-top:0;'>📊 Expert Analytical Conclusions</h4>
+                
+                <p>1. Utility Targets & Thermodynamics</p>
+                <ul>
+                    <li>The <b>Composite Curves</b> dynamically map your maximum internal heat recovery. By overlapping the hot and cold streams, we recover <b>{q_rec:,.0f} {therm_unit}</b> internally with zero fuel cost.</li>
+                    <li>The absolute minimum external heating required is <b>{qh_min:,.0f} {therm_unit}</b>. To deliver this, you require exactly <b>{steam_req_base:,.0f} kg/hr</b> of steam (releasing <b>{h_fg_display:,.0f} {h_fg_unit}</b> of latent heat).</li>
+                    <li>The minimum cooling utility required to reject excess low-grade heat is <b>{qc_min:,.0f} {therm_unit}</b>.</li>
+                </ul>
 
-            with c_rpt2:
-                st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-                st.markdown("##### 2. The Golden Rules of the Pinch")
-                st.markdown(f"""
-                * **The Bottleneck:** The Pinch Point occurs at **{pinch_hot:.1f}°C** for Hot streams and **{pinch_cold:.1f}°C** for Cold streams.
-                * **Rule 1:** Do NOT transfer heat across the pinch. Transferring heat from above {pinch_hot}°C to below {pinch_cold}°C incurs a double penalty, increasing both your steam and cooling water bills simultaneously.
-                * **Rule 2 & 3:** Never use cooling utilities above the pinch, and never use steam below the pinch. 
-                """)
-                st.markdown("</div>", unsafe_allow_html=True)
+                <p>2. The Golden Rules of the Pinch</p>
+                <ul>
+                    <li>The Pinch Point isolates the network at exactly <b>{pinch_hot:.1f}°C (Hot)</b> and <b>{pinch_cold:.1f}°C (Cold)</b>.</li>
+                    <li><b>Rule 1:</b> Avoid cross-pinch heat transfer. Moving heat from above {pinch_hot:.1f}°C to below {pinch_cold:.1f}°C causes a double penalty—increasing both your steam and cooling demand.</li>
+                    <li><b>Rule 2 & 3:</b> Do not use cooling water above the pinch (it acts as a heat sink), and do not use steam below the pinch (it acts as a heat source).</li>
+                </ul>
 
-            with c_rpt3:
-                st.markdown("<div class='insight-col'>", unsafe_allow_html=True)
-                st.markdown("##### 3. Financial Optimization")
-                st.markdown(f"""
-                * **The Trade-Off:** As your design approach (ΔT_min) increases, Capital Costs drop exponentially (smaller heat exchangers). However, Operating Costs rise linearly (more steam required).
-                * **Optimum Target:** The cost optimization engine has identified the absolute Total Cost Minimum at **ΔT_min = {dt_opt:.1f}°C**.
-                * **Action:** Adjusting your design approach from {dt_min_current}°C to {dt_opt:.1f}°C will minimize your annualized lifecycle costs and yield maximum ROI.
-                """)
-                st.markdown("</div>", unsafe_allow_html=True)
+                <p>3. Financial Impact & Optimization</p>
+                <ul>
+                    <li>The <b>Cost vs. ΔT_min Curve</b> models the trade-off: higher ΔT_min reduces CapEx (smaller heat exchangers) but increases OpEx (higher utility demand).</li>
+                    <li>The rigorous optimization engine calculates that your global <b>Total Cost Minimum occurs at ΔT_min = {dt_opt:.1f}°C</b>. Shifting your design basis from {dt_min_current}°C to {dt_opt:.1f}°C ensures mathematical cost efficiency over the plant's lifecycle.</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # PDF Export
+            pdf_report = generate_pinch_pdf(streams_df, qh_min, qc_min, pinch_hot, pinch_cold, q_rec, dt_opt, dt_min_current,
+                                            h_hot_aligned, t_hot, h_cold, t_cold, gcc_heat, all_shifted_temps,
+                                            dt_range, total_list, opex_list, capex_list, curr_sym, therm_unit,
+                                            steam_req_base, h_fg_display, h_fg_unit)
+            st.download_button("📥 Download Rigorous Pinch Analysis PDF Report", data=pdf_report, file_name="Pinch_Analysis_Report.pdf", mime="application/pdf")
 
 # =====================================================================
 # MODULE 2: HVAC & CHILLERS
