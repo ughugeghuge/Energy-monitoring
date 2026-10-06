@@ -1,8 +1,8 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # =====================================================================
 # PAGE CONFIGURATION & UI STYLING
@@ -11,7 +11,6 @@ st.set_page_config(page_title="Enterprise Energy & Pinch Analytics", layout="wid
 
 st.markdown("""
     <style>
-    /* Metric Cards */
     .metric-card {
         background-color: #ffffff;
         border-radius: 6px;
@@ -24,37 +23,24 @@ st.markdown("""
     .metric-title { color: #555555; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
     .metric-value { color: #111111; font-size: 26px; font-weight: 800; }
     .metric-sub { color: #888888; font-size: 11px; margin-top: 4px; }
-    
-    /* Sidebar */
     .sidebar-section { font-size: 14px; font-weight: 600; color: #2c3e50; margin-top: 15px; margin-bottom: 5px; border-bottom: 1px solid #ccc; padding-bottom: 3px;}
     
-    /* Recommendations Box - Fixed for Dark Mode Visibility */
     .recommendation-box { 
         background-color: #f4f6f9; 
         border-left: 4px solid #3498db; 
-        padding: 15px; 
+        padding: 20px; 
         border-radius: 5px; 
         margin-top: 20px;
-        color: #2c3e50; /* Forces dark text even in Streamlit Dark Mode */
+        color: #2c3e50;
     }
-    .recommendation-box h4 {
-        color: #1f4e79 !important; /* Force dark blue header */
-        margin-top: 0;
-    }
-    .recommendation-box li {
-        color: #333333; /* Force dark grey list items */
-        margin-bottom: 8px;
-    }
-    .recommendation-box b {
-        color: #111111;
-    }
-
-    /* Watermark */
+    .recommendation-box h4 { color: #1f4e79 !important; margin-top: 0; font-weight: 700;}
+    .recommendation-box h5 { color: #2c3e50 !important; margin-top: 15px; font-weight: 700;}
+    .recommendation-box li { color: #333333; margin-bottom: 10px; line-height: 1.5;}
+    .recommendation-box b { color: #111111; }
     .footer-watermark { position: fixed; right: 15px; bottom: 10px; font-size: 12px; color: #aaa; font-style: italic; z-index: 100;}
     </style>
 """, unsafe_allow_html=True)
 
-# Footer Watermark
 st.markdown('<div class="footer-watermark">prepared by- Umesh Ghuge</div>', unsafe_allow_html=True)
 
 # =====================================================================
@@ -63,15 +49,15 @@ st.markdown('<div class="footer-watermark">prepared by- Umesh Ghuge</div>', unsa
 st.sidebar.markdown("<div class='sidebar-section'>GLOBAL SETTINGS</div>", unsafe_allow_html=True)
 
 col_cur, col_unit = st.sidebar.columns(2)
-# Set default index to 0 for INR and kcal/hr
 currency_opt = col_cur.selectbox("Currency", ["INR (₹)", "USD ($)", "EUR (€)", "GBP (£)"], index=0)
 curr_sym = currency_opt.split(" ")[1].strip("()")
 
-therm_unit = col_unit.selectbox("Thermal Unit", ["kcal/hr", "kW"], index=0)
+therm_unit = col_unit.selectbox("Thermal Unit", ["kW", "kcal/hr"], index=0)
 
 st.sidebar.markdown("<div class='sidebar-section'>ECONOMIC FACTORS</div>", unsafe_allow_html=True)
 ELEC_RATE = st.sidebar.number_input(f"Electricity Tariff ({curr_sym}/kWh)", value=8.50 if "₹" in curr_sym else 0.12, step=0.5)
-FUEL_RATE = st.sidebar.number_input(f"Thermal Cost ({curr_sym}/{therm_unit})", value=3.00 if "₹" in curr_sym else 0.04, step=0.1)
+FUEL_RATE = st.sidebar.number_input(f"Hot Utility Cost ({curr_sym}/{therm_unit})", value=3.00 if "₹" in curr_sym else 0.04, step=0.1)
+COOL_RATE = st.sidebar.number_input(f"Cold Utility Cost ({curr_sym}/{therm_unit})", value=0.50 if "₹" in curr_sym else 0.01, step=0.1)
 OP_HOURS = st.sidebar.number_input("Annual Operating Hours", value=8000, step=100)
 
 st.sidebar.markdown("<div class='sidebar-section'>AUDIT MODULES</div>", unsafe_allow_html=True)
@@ -85,24 +71,57 @@ module = st.sidebar.radio("Select Engineering System:", [
 ], label_visibility="collapsed")
 
 # =====================================================================
+# CORE ALGORITHMS
+# =====================================================================
+def run_pinch_algorithm(df, dt_min, cp_col):
+    df_temp = df.copy()
+    df_temp['T_shift_s'] = np.where(df_temp['Type'] == 'Hot', df_temp['Ts (°C)'] - dt_min/2, df_temp['Ts (°C)'] + dt_min/2)
+    df_temp['T_shift_t'] = np.where(df_temp['Type'] == 'Hot', df_temp['Tt (°C)'] - dt_min/2, df_temp['Tt (°C)'] + dt_min/2)
+    
+    all_shifted_temps = sorted(list(set(df_temp['T_shift_s']).union(set(df_temp['T_shift_t']))), reverse=True)
+    
+    cascade = [0.0]
+    for i in range(len(all_shifted_temps)-1):
+        t_upper = all_shifted_temps[i]
+        t_lower = all_shifted_temps[i+1]
+        cp_sum = sum(row[cp_col] if row['Type'] == 'Hot' else -row[cp_col] 
+                     for _, row in df_temp.iterrows() 
+                     if max(row['T_shift_s'], row['T_shift_t']) >= t_upper and min(row['T_shift_s'], row['T_shift_t']) <= t_lower)
+        cascade.append(cascade[-1] + cp_sum * (t_upper - t_lower))
+        
+    min_heat = min(cascade)
+    qh_min = 0.0 if min_heat >= 0 else abs(min_heat)
+    gcc_heat = [c + qh_min for c in cascade]
+    qc_min = gcc_heat[-1]
+    
+    pinch_idx = gcc_heat.index(0)
+    pinch_temp_shifted = all_shifted_temps[pinch_idx]
+    
+    # Calculate Total Heating/Cooling Available without integration
+    total_hot_avail = sum(row[cp_col] * abs(row['Ts (°C)'] - row['Tt (°C)']) for _, row in df_temp[df_temp['Type'] == 'Hot'].iterrows())
+    total_cold_req = sum(row[cp_col] * abs(row['Ts (°C)'] - row['Tt (°C)']) for _, row in df_temp[df_temp['Type'] == 'Cold'].iterrows())
+    q_recovered = total_cold_req - qh_min
+    
+    return qh_min, qc_min, pinch_temp_shifted, q_recovered, total_hot_avail, total_cold_req, gcc_heat, all_shifted_temps
+
+# =====================================================================
 # MODULE 1: PINCH ANALYSIS (HEAT INTEGRATION)
 # =====================================================================
 if module == "Pinch Analysis & Heat Integration":
     st.title("Pinch Analysis & Heat Recovery Targeting")
-    st.markdown("Determine Minimum Utility Targets and generate Process Composite Curves to optimize thermodynamic networks.")
+    st.markdown("Optimize heat exchanger networks by determining minimum utility targets and optimum $\Delta T_{min}$ using realistic Crude Preheat Train models[cite: 9].")
 
     col1, col2 = st.columns([1, 4])
-    dt_min = col1.number_input("Min Approach Temp (ΔT_min °C)", value=10.0, step=1.0)
+    dt_min_current = col1.number_input("Design Approach Temp (ΔT_min °C)", value=20.0, step=1.0)
     
-    st.markdown("### Process Streams Definition")
+    st.markdown("### Process Streams Definition (Realistic Crude Preheat Train)")
     
-    # Defaults: 8 Hot Streams, 4 Cold Streams
     default_streams = pd.DataFrame({
-        "Stream ID": [f"Hot {i+1}" for i in range(8)] + [f"Cold {i+1}" for i in range(4)],
-        "Type": ["Hot"]*8 + ["Cold"]*4,
-        "Ts (°C)": [170.0, 150.0, 200.0, 180.0, 120.0, 160.0, 140.0, 190.0,  20.0, 80.0, 40.0, 50.0],
-        "Tt (°C)": [60.0, 30.0, 100.0, 80.0, 40.0, 50.0, 70.0, 90.0,  135.0, 140.0, 160.0, 120.0],
-        f"CP ({therm_unit}/°C)": [3.0, 1.5, 2.5, 4.0, 1.2, 3.5, 2.0, 1.8,  2.0, 4.0, 3.0, 1.5]
+        "Stream ID": ["Light Naphtha", "Heavy Naphtha", "Kerosene", "Diesel", "Residue", "Crude Oil Feed"],
+        "Type": ["Hot", "Hot", "Hot", "Hot", "Hot", "Cold"],
+        "Ts (°C)": [120.0, 160.0, 200.0, 250.0, 350.0, 25.0],
+        "Tt (°C)": [40.0, 60.0, 80.0, 60.0, 100.0, 340.0],
+        f"CP ({therm_unit}/°C)": [25.0, 30.0, 20.0, 40.0, 60.0, 120.0]
     })
     
     streams_df = st.data_editor(
@@ -111,53 +130,38 @@ if module == "Pinch Analysis & Heat Integration":
         num_rows="dynamic", use_container_width=True
     )
 
-    with st.expander("📐 View Mathematical Models & Formulas"):
-        st.latex(r"Q_{interval} = \sum_{i} CP_i \times (T_{upper} - T_{lower})")
-        st.latex(r"T_{hot, shift} = T_{hot} - \frac{\Delta T_{min}}{2} \quad | \quad T_{cold, shift} = T_{cold} + \frac{\Delta T_{min}}{2}")
-        st.markdown("- **Problem Table Algorithm**: Shifts temperatures to a common basis, calculates net enthalpy surplus/deficit per temperature interval, and cascades heat downward to find the exact pinch point where heat flow is zero.")
+    with st.expander("📐 View Mathematical Models & Capital Cost Parameters"):
+        st.latex(r"Q_{interval} = \sum CP_{hot} \Delta T - \sum CP_{cold} \Delta T")
+        st.latex(r"Total Cost = \left( Q_{HU} \cdot C_{HU} + Q_{CU} \cdot C_{CU} \right) \cdot \text{Hours} + CapEx_{annualized}")
+        st.latex(r"Area_{approx} \approx \frac{Q_{recovered}}{U \cdot \Delta T_{min}}")
+        st.markdown("**Economic Parameters for Cost Optimization Curve:**")
+        cc1, cc2, cc3 = st.columns(3)
+        u_val = cc1.number_input(f"Avg Heat Transfer Coeff U ({therm_unit}/m²°C)", value=0.5)
+        cost_m2 = cc2.number_input(f"Heat Exchanger Cost ({curr_sym}/m²)", value=5000.0)
+        af = cc3.number_input("Annualization Factor (CapEx)", value=0.2)
 
-    if st.button("Execute Pinch Algorithm", type="primary"):
-        with st.spinner("Cascading heat flows..."):
-            df = streams_df.copy()
+    if st.button("Execute Rigorous Pinch Optimization", type="primary"):
+        with st.spinner("Processing thermodynamic cascade and cost optimizations..."):
             cp_col = f"CP ({therm_unit}/°C)"
             
-            df['T_shift_s'] = np.where(df['Type'] == 'Hot', df['Ts (°C)'] - dt_min/2, df['Ts (°C)'] + dt_min/2)
-            df['T_shift_t'] = np.where(df['Type'] == 'Hot', df['Tt (°C)'] - dt_min/2, df['Tt (°C)'] + dt_min/2)
-            
-            all_shifted_temps = sorted(list(set(df['T_shift_s']).union(set(df['T_shift_t']))), reverse=True)
-            
-            cascade = [0.0]
-            for i in range(len(all_shifted_temps)-1):
-                t_upper = all_shifted_temps[i]
-                t_lower = all_shifted_temps[i+1]
-                cp_sum = 0.0
-                for _, row in df.iterrows():
-                    high_t = max(row['T_shift_s'], row['T_shift_t'])
-                    low_t = min(row['T_shift_s'], row['T_shift_t'])
-                    if high_t >= t_upper and low_t <= t_lower:
-                        cp_sum += row[cp_col] if row['Type'] == 'Hot' else -row[cp_col]
-                q_interval = cp_sum * (t_upper - t_lower)
-                cascade.append(cascade[-1] + q_interval)
-                
-            min_heat = min(cascade)
-            qh_min = 0.0 if min_heat >= 0 else abs(min_heat)
-            
-            gcc_heat = [c + qh_min for c in cascade]
-            qc_min = gcc_heat[-1]
-            
-            pinch_idx = gcc_heat.index(0)
-            pinch_temp_shifted = all_shifted_temps[pinch_idx]
-            pinch_hot = pinch_temp_shifted + dt_min/2
-            pinch_cold = pinch_temp_shifted - dt_min/2
+            # Run Base Case
+            qh_min, qc_min, p_shift, q_rec, t_hot_avail, t_cold_req, gcc_heat, all_shifted_temps = run_pinch_algorithm(streams_df, dt_min_current, cp_col)
+            pinch_hot = p_shift + dt_min_current/2
+            pinch_cold = p_shift - dt_min_current/2
+
+            # Calculate OpEx and Base Case Economics
+            current_opex = (qh_min * FUEL_RATE + qc_min * COOL_RATE) * OP_HOURS
+            unintegrated_opex = (t_cold_req * FUEL_RATE + t_hot_avail * COOL_RATE) * OP_HOURS
+            annual_savings = unintegrated_opex - current_opex
 
             mc1, mc2, mc3 = st.columns(3)
-            mc1.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Min Hot Utility (QH)</div><div class='metric-value'>{qh_min:,.1f} {therm_unit}</div><div class='metric-sub'>Annual Cost: {curr_sym}{qh_min*OP_HOURS*FUEL_RATE:,.0f}</div></div>", unsafe_allow_html=True)
-            mc2.markdown(f"<div class='metric-card' style='border-left-color:#3498db;'><div class='metric-title'>Min Cold Utility (QC)</div><div class='metric-value'>{qc_min:,.1f} {therm_unit}</div><div class='metric-sub'>Cooling below pinch</div></div>", unsafe_allow_html=True)
-            mc3.markdown(f"<div class='metric-card' style='border-left-color:#9b59b6;'><div class='metric-title'>Pinch Temperature</div><div class='metric-value'>{pinch_hot:.1f}°C / {pinch_cold:.1f}°C</div><div class='metric-sub'>Hot Pinch / Cold Pinch</div></div>", unsafe_allow_html=True)
+            mc1.markdown(f"<div class='metric-card' style='border-left-color:#e74c3c;'><div class='metric-title'>Target Hot Utility (QH)</div><div class='metric-value'>{qh_min:,.0f} {therm_unit}</div><div class='metric-sub'>Unintegrated Req: {t_cold_req:,.0f} {therm_unit}</div></div>", unsafe_allow_html=True)
+            mc2.markdown(f"<div class='metric-card' style='border-left-color:#3498db;'><div class='metric-title'>Target Cold Utility (QC)</div><div class='metric-value'>{qc_min:,.0f} {therm_unit}</div><div class='metric-sub'>Unintegrated Req: {t_hot_avail:,.0f} {therm_unit}</div></div>", unsafe_allow_html=True)
+            mc3.markdown(f"<div class='metric-card' style='border-left-color:#2ecc71;'><div class='metric-title'>Process Heat Recovered</div><div class='metric-value'>{q_rec:,.0f} {therm_unit}</div><div class='metric-sub'>Avoided OpEx: {curr_sym}{annual_savings:,.0f}/yr</div></div>", unsafe_allow_html=True)
 
-            # Composite Curves
+            # --- GRAPH 1: Composite Curves (T-Q / T-H) ---
             def get_composite(stream_type):
-                sub_df = df[df['Type'] == stream_type]
+                sub_df = streams_df[streams_df['Type'] == stream_type]
                 temps = sorted(list(set(sub_df['Ts (°C)']).union(set(sub_df['Tt (°C)']))))
                 H_vals = [0.0]
                 for i in range(len(temps)-1):
@@ -173,23 +177,65 @@ if module == "Pinch Analysis & Heat Integration":
             fig_cc = go.Figure()
             fig_cc.add_trace(go.Scatter(x=h_hot_aligned, y=t_hot, mode='lines', name='Hot Composite Curve', line=dict(color='#e74c3c', width=3)))
             fig_cc.add_trace(go.Scatter(x=h_cold, y=t_cold, mode='lines', name='Cold Composite Curve', line=dict(color='#3498db', width=3)))
-            fig_cc.update_layout(title="Composite Curves (T-H Diagram)", xaxis_title=f"Enthalpy ({therm_unit})", yaxis_title="Actual Temperature (°C)", template="plotly_white", margin=dict(l=40, r=40, t=40, b=40))
+            
+            # Annotate Pinch[cite: 9]
+            h_pinch = h_hot_aligned[np.argmin(np.abs(np.array(t_hot) - pinch_hot))]
+            fig_cc.add_annotation(x=h_pinch, y=pinch_hot, text=f"Pinch (ΔT = {dt_min_current}°C)", showarrow=True, arrowhead=2, arrowcolor="#2c3e50")
+            
+            fig_cc.update_layout(title="Temperature vs. Enthalpy (Composite Curves)[cite: 9]", xaxis_title=f"Enthalpy Ḣ ({therm_unit})", yaxis_title="Temperature T (°C)", template="plotly_white", height=500)
             st.plotly_chart(fig_cc, use_container_width=True)
 
-            # Grand Composite Curve
-            fig_gcc = go.Figure()
-            fig_gcc.add_trace(go.Scatter(x=gcc_heat, y=all_shifted_temps, mode='lines+markers', name='GCC', line=dict(color='#8e44ad', width=3), marker=dict(size=6)))
-            fig_gcc.add_hline(y=pinch_temp_shifted, line_dash="dash", line_color="gray", annotation_text=f"Pinch ({pinch_temp_shifted}°C Shifted)")
-            fig_gcc.update_layout(title="Grand Composite Curve (GCC)", xaxis_title=f"Net Heat Flow ({therm_unit})", yaxis_title="Shifted Temperature (°C)", template="plotly_white", margin=dict(l=40, r=40, t=40, b=40))
-            st.plotly_chart(fig_gcc, use_container_width=True)
+            # --- GRAPH 2: Cost Optimization vs Delta T_min ---
+            dt_range = np.linspace(5, 40, 30)
+            opex_list, capex_list, total_list = [], [], []
+            
+            for dt in dt_range:
+                qh, qc, p_s, qr, _, _, _, _ = run_pinch_algorithm(streams_df, dt, cp_col)
+                # OpEx[cite: 9]
+                op_cost = (qh * FUEL_RATE + qc * COOL_RATE) * OP_HOURS
+                # Approx Area & CapEx[cite: 9]
+                area = qr / (u_val * dt) + (qh / (u_val * 30)) + (qc / (u_val * 20)) if dt > 0 else 0
+                cap_cost = (area * cost_m2) * af
+                
+                opex_list.append(op_cost)
+                capex_list.append(cap_cost)
+                total_list.append(op_cost + cap_cost)
+
+            opt_idx = np.argmin(total_list)
+            dt_opt = dt_range[opt_idx]
+
+            fig_cost = go.Figure()
+            fig_cost.add_trace(go.Scatter(x=dt_range, y=total_list, mode='lines', name='Total Costs', line=dict(color='#2c3e50', width=3)))
+            fig_cost.add_trace(go.Scatter(x=dt_range, y=opex_list, mode='lines', name='Operating Costs', line=dict(color='#e74c3c', width=2, dash='dash')))
+            fig_cost.add_trace(go.Scatter(x=dt_range, y=capex_list, mode='lines', name='Capital Costs', line=dict(color='#3498db', width=2, dash='dash')))
+            
+            fig_cost.add_vline(x=dt_opt, line_dash="dot", line_color="green", annotation_text=f"Optimum ΔT_min = {dt_opt:.1f}°C")
+            fig_cost.update_layout(title="Economic Optimization: Cost vs. ΔT_min[cite: 9]", xaxis_title="ΔT_min (°C)", yaxis_title=f"Annualized Cost ({curr_sym}/yr)", template="plotly_white", height=500)
+            st.plotly_chart(fig_cost, use_container_width=True)
 
             st.markdown(f"""
             <div class='recommendation-box'>
-                <h4>📊 Expert Conclusions & Recommendations</h4>
+                <h4>📊 Expert Analytical Conclusions</h4>
+                
+                <h5>1. The Significance of the Composite Curves</h5>
                 <ul>
-                    <li><b>Utility Targets:</b> The absolute minimum energy required to run this process is <b>{qh_min:,.1f} {therm_unit}</b> of heating and <b>{qc_min:,.1f} {therm_unit}</b> of cooling. Achieving this requires a perfectly integrated Heat Exchanger Network (HEN).</li>
-                    <li><b>Pinch Violation Warning:</b> Do <b>NOT</b> transfer heat across the pinch point ({pinch_hot}°C Hot / {pinch_cold}°C Cold). Any cross-pinch heat transfer will result in a double penalty, increasing both your hot and cold utility demands by the exact amount transferred.</li>
-                    <li><b>Utility Selection (GCC):</b> Review the Grand Composite Curve (bottom graph) to select appropriate utility levels. If the curve opens widely at the top, you may be able to substitute expensive high-pressure steam with cheaper low-grade thermal utilities.</li>
+                    <li>The <b>Temperature-Enthalpy (T-H) Composite Curve</b> visually maps the maximum possible internal heat recovery ($Q_{{recovery}}$)[cite: 9]. The region where the red and blue curves overlap horizontally represents process-to-process heat exchange that requires <b>zero external fuel</b>[cite: 9].</li>
+                    <li>The horizontal gap at the top right of the curve indicates your absolute <b>Minimum Hot Utility Requirement ($Q_{{HU,opt}}$)</b> of {qh_min:,.0f} {therm_unit}[cite: 9]. The gap at the bottom left is your <b>Minimum Cold Utility ($Q_{{CU,opt}}$)</b> of {qc_min:,.0f} {therm_unit}[cite: 9].</li>
+                </ul>
+
+                <h5>2. The Golden Rules of Pinch Violations</h5>
+                <ul>
+                    <li>The Pinch Point occurs at exactly <b>{pinch_hot:.1f}°C for Hot streams</b> and <b>{pinch_cold:.1f}°C for Cold streams</b>. This defines the thermodynamic bottleneck of your plant.</li>
+                    <li><b>Rule 1:</b> Do NOT transfer heat across the pinch. If an existing heat exchanger transfers $X$ units of heat from a stream above {pinch_hot}°C to a stream below {pinch_cold}°C, your total plant utility consumption will increase by $X$ for both hot <i>and</i> cold utilities.</li>
+                    <li><b>Rule 2:</b> Do not use external Cooling Utilities above the pinch. Above the pinch is a heat sink; cooling should only be done by cold process streams.</li>
+                    <li><b>Rule 3:</b> Do not use external Heating Utilities below the pinch. Below the pinch is a heat source; it possesses excess heat that must be rejected.</li>
+                </ul>
+
+                <h5>3. Financial Impact & $\Delta T_{{min}}$ Optimization</h5>
+                <ul>
+                    <li>The <b>Cost vs. $\Delta T_{{min}}$ Curve</b> resolves the fundamental trade-off in process design[cite: 9].</li>
+                    <li>As $\Delta T_{{min}}$ increases, <b>Capital Costs</b> drop exponentially because higher driving forces require smaller heat exchanger areas[cite: 9]. However, <b>Operating Costs</b> rise linearly because less heat is recovered, forcing higher boiler and cooling tower loads[cite: 9].</li>
+                    <li>The rigorous optimization engine has determined your global <b>Total Cost Minimum ($\Delta T_{{min, opt}}$) occurs at {dt_opt:.1f}°C</b>[cite: 9]. Adjusting your design approach from {dt_min_current}°C to {dt_opt:.1f}°C will minimize your annualized lifecycle costs.</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -203,7 +249,6 @@ elif module == "HVAC & Chiller Systems":
     with st.expander("📐 View Mathematical Models & Formulas"):
         st.latex(r"Cooling Load (TR) = \frac{Flow (m^3/hr) \times \Delta T \times 4.187 \times 1000}{3600 \times 3.517}")
         st.latex(r"COP = \frac{Cooling Capacity (kW)}{Input Power (kW)} \quad | \quad Carnot COP = \frac{T_{evap}}{T_{cond} - T_{evap}}")
-        st.markdown("- **Specific Power**: Lower kW/TR indicates a more efficient chiller. Typical modern water-cooled chillers range from 0.55 to 0.65 kW/TR.")
 
     c1, c2, c3, c4 = st.columns(4)
     flow = c1.number_input("Chilled Water Flow (m³/h)", value=150.0)
@@ -224,25 +269,12 @@ elif module == "HVAC & Chiller Systems":
     mc2.markdown(f"<div class='metric-card'><div class='metric-title'>Operating COP</div><div class='metric-value'>{cop:.2f}</div><div class='metric-sub'>Theoretical Max: {carnot_cop:.2f}</div></div>", unsafe_allow_html=True)
     mc3.markdown(f"<div class='metric-card'><div class='metric-title'>Carnot Efficiency</div><div class='metric-value'>{carnot_eff:.1f} %</div><div class='metric-sub'>Deviation from ideal cycle</div></div>", unsafe_allow_html=True)
     
-    st.markdown("### 🎛️ Dynamic Setpoint Optimization")
-    opt_t_out = st.slider("Optimize Chilled Water Supply Setpoint (°C)", min_value=float(t_out), max_value=float(t_out)+5.0, value=float(t_out)+1.5, step=0.5)
-    
-    eff_gain_pct = (opt_t_out - t_out) * 3.0
-    new_kw_tr = kw_tr * (1 - eff_gain_pct/100)
-    annual_savings = (kw_tr - new_kw_tr) * tr * OP_HOURS * ELEC_RATE
-    
-    fig = go.Figure()
-    fig.add_trace(go.Indicator(mode="number+delta", value=new_kw_tr, title={"text": "Projected kW/TR"}, delta={'reference': kw_tr, 'relative': False, 'position': "bottom"}, domain={'row': 0, 'column': 0}))
-    fig.add_trace(go.Indicator(mode="number", value=annual_savings, number={'prefix': curr_sym}, title={"text": "Annual Financial Savings"}, domain={'row': 0, 'column': 1}))
-    fig.update_layout(grid={'rows': 1, 'columns': 2, 'pattern': "independent"}, height=250)
-    st.plotly_chart(fig, use_container_width=True)
-
     st.markdown(f"""
     <div class='recommendation-box'>
-        <h4>📊 Expert Conclusions & Recommendations</h4>
+        <h4>📊 Expert Analytical Conclusions</h4>
         <ul>
-            <li><b>Current Baseline:</b> At {kw_tr:.2f} kW/TR, your chiller is operating at {carnot_eff:.1f}% of its theoretical Carnot potential.</li>
-            <li><b>Setpoint Adjustments:</b> Elevating the chilled water setpoint from {t_out}°C to {opt_t_out}°C yields an estimated {eff_gain_pct:.1f}% reduction in compressor work, saving <b>{curr_sym}{annual_savings:,.0f}</b> annually. Verify if air handling units (AHUs) can satisfy space cooling loads at the elevated supply temperature.</li>
+            <li><b>Current Baseline:</b> At {kw_tr:.2f} kW/TR, your chiller is operating at {carnot_eff:.1f}% of its theoretical Carnot potential. Typical modern variable-speed centrifugal chillers achieve 0.55 - 0.65 kW/TR.</li>
+            <li><b>Actionable Step:</b> Clean condenser tubes. A fouling factor increase of just 0.0005 can increase compressor power by 10%.</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -256,8 +288,6 @@ elif module == "Cooling Tower Analytics":
     with st.expander("📐 View Mathematical Models & Formulas"):
         st.latex(r"Range = T_{hot} - T_{cold} \quad | \quad Approach = T_{cold} - T_{WBT}")
         st.latex(r"Effectiveness (\%) = \frac{Range}{Range + Approach} \times 100")
-        st.latex(r"Evaporation Loss = 0.00085 \times 1.8 \times Flow \times Range")
-        st.markdown("- **Cycles of Concentration (COC)** dictates blowdown requirements. A higher COC saves water but requires superior chemical treatment.")
 
     c1, c2, c3, c4 = st.columns(4)
     t_in = c1.number_input("Hot Water Return (°C)", value=40.0)
@@ -282,7 +312,7 @@ elif module == "Cooling Tower Analytics":
 
         st.markdown(f"""
         <div class='recommendation-box'>
-            <h4>📊 Expert Conclusions & Recommendations</h4>
+            <h4>📊 Expert Analytical Conclusions</h4>
             <ul>
                 <li><b>Approach Analysis:</b> Your current approach is {app:.1f}°C. Industrial towers are designed for a 3-5°C approach. If your approach is higher than 5°C, inspect the fill media for scaling/fouling or verify fan blade pitch angles.</li>
                 <li><b>Water Conservation:</b> You are consuming {makeup*OP_HOURS:,.0f} m³ of fresh water annually. Increasing your Cycles of Concentration (COC) through automated blowdown controllers and advanced polymers can significantly reduce this intake.</li>
@@ -299,7 +329,6 @@ elif module == "Compressed Air Systems":
     with st.expander("📐 View Mathematical Models & Formulas"):
         st.latex(r"Leakage (\%) = \frac{T_{load}}{T_{load} + T_{unload}} \times 100")
         st.latex(r"Leakage (CFM) = Capacity_{cfm} \times \frac{Leakage (\%)}{100}")
-        st.markdown("- Conducted during non-production hours. The compressor only loads to replenish air lost to network leaks.")
 
     c1, c2, c3, c4 = st.columns(4)
     cap_cfm = c1.number_input("Compressor Capacity (CFM)", value=500.0)
@@ -319,7 +348,7 @@ elif module == "Compressed Air Systems":
     
     st.markdown(f"""
     <div class='recommendation-box'>
-        <h4>📊 Expert Conclusions & Recommendations</h4>
+        <h4>📊 Expert Analytical Conclusions</h4>
         <ul>
             <li><b>Leakage Impact:</b> The network is leaking {l_pct:.1f}% of generated air, bleeding <b>{curr_sym}{annual_loss_cost:,.0f}</b> per year. Implement an ultrasonic leak detection survey immediately. Target reducing leakage to under 10%.</li>
             <li><b>Pressure Reduction:</b> For every 1 bar (14.5 psi) reduction in header pressure, compressor power consumption decreases by approximately 7%. Ensure point-of-use regulators are utilized rather than over-pressurizing the entire central header.</li>
@@ -361,7 +390,7 @@ elif module == "Lighting Retrofit Economics":
 
     st.markdown(f"""
     <div class='recommendation-box'>
-        <h4>📊 Expert Conclusions & Recommendations</h4>
+        <h4>📊 Expert Analytical Conclusions</h4>
         <ul>
             <li><b>Financial Viability:</b> With a simple payback period of {roi_months:.1f} months, this retrofit is highly attractive. Any ROI under 24 months is generally considered an immediate-action operational priority.</li>
             <li><b>Maintenance Offsets:</b> LEDs possess a lifespan of ~50,000 hours compared to legacy lifespans of 8,000-15,000 hours. This calculation does not yet include the avoided replacement/labor costs, meaning your actual ROI will be even faster.</li>
@@ -374,7 +403,7 @@ elif module == "Lighting Retrofit Economics":
 # =====================================================================
 elif module == "Plant-Wide Energy Sankey":
     st.title("Macro Energy Flow & Optimization")
-    st.markdown("Visualize whole-plant energy distribution using advanced Sankey diagrams to identify primary thermodynamic and electrical bleeds.")
+    st.markdown("Visualize whole-plant energy distribution using advanced Sankey diagrams.")
     
     st.markdown("### Sub-System Electrical Loads (kW)")
     c1, c2, c3, c4 = st.columns(4)
@@ -409,12 +438,12 @@ elif module == "Plant-Wide Energy Sankey":
                     chiller_kw-chiller_loss, chiller_loss, comp_kw-comp_loss, comp_loss, light_kw-light_loss, light_loss, pump_kw-pump_loss, pump_loss]
       ))])
 
-    fig.update_layout(title_text="Plant Electromechanical Energy Flow Mapping", font_size=12, height=450, margin=dict(l=20, r=20, t=40, b=20))
+    fig.update_layout(title_text="Plant Electromechanical Energy Flow Mapping", font_size=12, height=500, margin=dict(l=20, r=20, t=40, b=20))
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown(f"""
     <div class='recommendation-box'>
-        <h4>📊 Expert Conclusions & Recommendations</h4>
+        <h4>📊 Expert Analytical Conclusions</h4>
         <ul>
             <li><b>Compressor Dominance:</b> Note the massive proportion of compressed air energy routed to "Losses" (Red line). Compressed air is an incredibly inefficient utility (~10-15% mechanical efficiency). Evaluate replacing pneumatic tools with direct electric drives where feasible.</li>
             <li><b>Base Load Optimization:</b> Your plant is drawing {total_kw} kW. Target a 5% baseline reduction via operational housekeeping (turning off idle equipment, repairing leaks, cleaning heat exchange surfaces), which will yield an immediate, zero-capex saving of <b>{curr_sym}{(total_bill*0.05):,.0f}</b> per year.</li>
